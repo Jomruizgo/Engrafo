@@ -231,7 +231,7 @@ func TestCGDeadcodeHandler(t *testing.T) {
 	}
 }
 
-func TestServerHasEightTools(t *testing.T) {
+func TestServerHasNineTools(t *testing.T) {
 	// Arrange
 	s := openTestStore(t)
 
@@ -239,8 +239,26 @@ func TestServerHasEightTools(t *testing.T) {
 	srv := engrafo.New(s)
 	count := srv.ToolCount()
 
-	// Assert: 7 v1.0 tools + cg_deadcode (v1.1)
-	if count != 8 {
-		t.Errorf("want exactly 8 MCP tools, got %d", count)
+	// Assert: 7 v1.0 tools + cg_deadcode + cg_history (v1.1)
+	if count != 9 {
+		t.Errorf("want exactly 9 MCP tools, got %d", count)
+	}
+}
+
+func TestCGHistoryHandler(t *testing.T) {
+	// Arrange
+	s := openTestStore(t)
+	seedGraph(t, s)
+	h := engrafo.NewHandlers(s)
+
+	// Act: look up a known symbol
+	out := callHandler(t, h.CGHistory, map[string]any{"symbol": "UserService", "kind": "class"})
+
+	// Assert
+	if _, ok := out["timeline"]; !ok {
+		t.Error("CGHistory missing 'timeline' key")
+	}
+	if _, ok := out["symbol"]; !ok {
+		t.Error("CGHistory missing 'symbol' key")
 	}
 }
