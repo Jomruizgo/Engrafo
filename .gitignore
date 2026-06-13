@@ -13,3 +13,6 @@ vendor/
 # OS artifacts
 .DS_Store
 Thumbs.db
+
+# Notas y experimentos locales (no se publican)
+notes/
