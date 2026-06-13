@@ -102,5 +102,13 @@ func (s *Server) buildMCP() *server.MCPServer {
 		s.handlers.CGAnchor,
 	)
 
+	mcpSrv.AddTool(
+		mcplib.NewTool(ToolCGDeadcode,
+			mcplib.WithDescription("Scans for dead code: orphan nodes (never referenced) and abandoned nodes (once referenced, no longer)."),
+			mcplib.WithNumber("threshold_days", mcplib.Description("Only include nodes inactive for more than N days (default: 0 = all)")),
+		),
+		s.handlers.CGDeadcode,
+	)
+
 	return mcpSrv
 }

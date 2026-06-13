@@ -10,7 +10,8 @@ import (
 	"github.com/Jomruizgo/Engrafo/internal/graph"
 )
 
-// Tool names exposed by the MCP server. PRD mandates exactly these 7.
+// Tool names exposed by the MCP server.
+// 7 tools in v1.0 + cg_deadcode in v1.1.
 const (
 	ToolCGContext      = "cg_context"
 	ToolCGNode         = "cg_node"
@@ -19,6 +20,7 @@ const (
 	ToolCGImpact       = "cg_impact"
 	ToolCGSearch       = "cg_search"
 	ToolCGAnchor       = "cg_anchor"
+	ToolCGDeadcode     = "cg_deadcode"
 )
 
 // Handlers holds the dependencies used by all tool handlers.
@@ -195,4 +197,46 @@ func (h *Handlers) CGAnchor(_ context.Context, req mcplib.CallToolRequest) (*mcp
 		return errResult(err.Error()), nil
 	}
 	return jsonResult(map[string]any{"anchored": count})
+}
+
+// CGDeadcode implements the cg_deadcode MCP tool (v1.1).
+// Returns orphan nodes (never referenced) and abandoned nodes (once referenced, now not).
+func (h *Handlers) CGDeadcode(_ context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	args := req.GetArguments()
+	thresholdDays := 0
+	if v, ok := args["threshold_days"].(float64); ok {
+		thresholdDays = int(v)
+	}
+
+	result, err := h.querier.Deadcode(thresholdDays)
+	if err != nil {
+		return errResult(fmt.Sprintf("deadcode scan: %v", err)), nil
+	}
+
+	orphans := make([]map[string]any, 0, len(result.Orphans))
+	for _, o := range result.Orphans {
+		orphans = append(orphans, map[string]any{
+			"symbol":    o.Symbol,
+			"kind":      o.Kind,
+			"file_path": o.FilePath,
+			"language":  o.Language,
+		})
+	}
+
+	abandoned := make([]map[string]any, 0, len(result.Abandoned))
+	for _, a := range result.Abandoned {
+		abandoned = append(abandoned, map[string]any{
+			"symbol":               a.Symbol,
+			"kind":                 a.Kind,
+			"file_path":            a.FilePath,
+			"language":             a.Language,
+			"peak_incoming_edges":  a.PeakIncomingEdges,
+			"days_since_abandoned": a.DaysSinceAbandoned,
+		})
+	}
+
+	return jsonResult(map[string]any{
+		"orphans":   orphans,
+		"abandoned": abandoned,
+	})
 }
