@@ -1,9 +1,17 @@
 package hooks
 
-import "github.com/Jomruizgo/Engrafo/internal/graph"
+import (
+	"fmt"
+
+	"github.com/Jomruizgo/Engrafo/internal/graph"
+)
 
 // PreReadMessage returns the systemMessage to inject before a Read tool call.
 // Returns "" when the file has no dependents (no injection needed).
-func PreReadMessage(_ *graph.Querier, _ string) string {
-	return "" // BLOQUEANTE: stub
+func PreReadMessage(q *graph.Querier, filePath string) string {
+	deps, err := q.Dependents(filePath)
+	if err != nil || len(deps) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("[engrafo] %s has %d dependent(s) — edits may break callers", filePath, len(deps))
 }

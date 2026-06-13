@@ -1,8 +1,19 @@
 package hooks
 
+import "encoding/json"
+
+// hookOutput is written to stdout for Claude Code to parse.
+type hookOutput struct {
+	SystemMessage string `json:"systemMessage,omitempty"`
+}
+
 // BuildOutput formats the hook stdout JSON response.
-// Claude Code reads this JSON; systemMessage is injected into the agent context.
 // Empty message → no systemMessage key (no injection).
-func BuildOutput(_ string) string {
-	return "{}" // BLOQUEANTE: stub
+func BuildOutput(msg string) string {
+	out := hookOutput{SystemMessage: msg}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
 }
