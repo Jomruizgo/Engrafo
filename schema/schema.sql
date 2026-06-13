@@ -53,6 +53,24 @@ CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
     content_rowid=id
 );
 
+-- Triggers to keep nodes_fts in sync with nodes table
+CREATE TRIGGER IF NOT EXISTS nodes_fts_ai AFTER INSERT ON nodes BEGIN
+    INSERT INTO nodes_fts(rowid, symbol, file_path, signature)
+    VALUES (new.id, new.symbol, new.file_path, new.signature);
+END;
+
+CREATE TRIGGER IF NOT EXISTS nodes_fts_ad AFTER DELETE ON nodes BEGIN
+    INSERT INTO nodes_fts(nodes_fts, rowid, symbol, file_path, signature)
+    VALUES ('delete', old.id, old.symbol, old.file_path, old.signature);
+END;
+
+CREATE TRIGGER IF NOT EXISTS nodes_fts_au AFTER UPDATE ON nodes BEGIN
+    INSERT INTO nodes_fts(nodes_fts, rowid, symbol, file_path, signature)
+    VALUES ('delete', old.id, old.symbol, old.file_path, old.signature);
+    INSERT INTO nodes_fts(rowid, symbol, file_path, signature)
+    VALUES (new.id, new.symbol, new.file_path, new.signature);
+END;
+
 -- engram anchor table
 CREATE TABLE IF NOT EXISTS engram_anchors (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
