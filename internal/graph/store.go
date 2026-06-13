@@ -49,6 +49,39 @@ func (s *Store) DB() *sql.DB { return s.db }
 // Close releases the database connection.
 func (s *Store) Close() error { return s.db.Close() }
 
+// AnchorObservations links an engram observation ID to all nodes matching the given symbols.
+// Returns the number of anchors actually created.
+func (s *Store) AnchorObservations(obsID string, symbols []string) (int, error) {
+	if len(symbols) == 0 {
+		return 0, nil
+	}
+	count := 0
+	for _, sym := range symbols {
+		rows, err := s.db.Query(`SELECT id FROM nodes WHERE symbol = ?`, sym)
+		if err != nil {
+			return count, fmt.Errorf("lookup symbol %q: %w", sym, err)
+		}
+		var nodeIDs []int64
+		for rows.Next() {
+			var id int64
+			rows.Scan(&id)
+			nodeIDs = append(nodeIDs, id)
+		}
+		rows.Close()
+		for _, nid := range nodeIDs {
+			_, err := s.db.Exec(
+				`INSERT OR IGNORE INTO engram_anchors(node_id, engram_obs_id) VALUES(?,?)`,
+				nid, obsID,
+			)
+			if err != nil {
+				return count, fmt.Errorf("anchor node %d: %w", nid, err)
+			}
+			count++
+		}
+	}
+	return count, nil
+}
+
 // migrate ensures the schema is at SchemaVersion.
 // Strategy: all DDL uses IF NOT EXISTS, so re-running on a partial schema is safe.
 func (s *Store) migrate() error {
