@@ -34,6 +34,26 @@ type ProjectContext struct {
 	NodeCounts map[string]int
 }
 
+// NodeDetail holds the full metadata for a single graph node.
+type NodeDetail struct {
+	ID        int64
+	Symbol    string
+	Kind      string
+	FilePath  string
+	LineStart int
+	LineEnd   int
+	Language  string
+}
+
+// NodeInfoResult holds a node's details plus its incoming/outgoing edges and anchors.
+type NodeInfoResult struct {
+	Node                NodeDetail
+	DependsOn           []DependentNode
+	UsedBy              []DependentNode
+	HistoricalEdges     []DependentNode
+	AnchoredObsIDs      []string
+}
+
 // QueryResult is an alias kept for backwards compatibility.
 type QueryResult = DependentNode
 
@@ -168,6 +188,98 @@ func (q *Querier) Search(query string, limit int) ([]SearchResult, error) {
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// NodeInfo returns detailed information for a single node identified by symbol (and optionally kind).
+func (q *Querier) NodeInfo(symbol, kind string, includeInvalidated bool) (*NodeInfoResult, error) {
+	db := q.store.db
+	qStr := `SELECT id, symbol, kind, file_path, COALESCE(line_start,0), COALESCE(line_end,0), language
+	         FROM nodes WHERE symbol = ? AND kind != 'external'`
+	args := []any{symbol}
+	if kind != "" {
+		qStr += " AND kind = ?"
+		args = append(args, kind)
+	}
+	qStr += " LIMIT 1"
+
+	var nd NodeDetail
+	err := db.QueryRow(qStr, args...).Scan(&nd.ID, &nd.Symbol, &nd.Kind, &nd.FilePath, &nd.LineStart, &nd.LineEnd, &nd.Language)
+	if err != nil {
+		return nil, fmt.Errorf("node lookup %q: %w", symbol, err)
+	}
+
+	// outgoing edges (depends_on)
+	outRows, err := db.Query(`
+		SELECT n2.symbol, n2.file_path, n2.kind, e.kind
+		FROM edges e JOIN nodes n2 ON n2.id = e.to_id
+		WHERE e.from_id = ? AND e.valid_until_commit IS NULL`, nd.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer outRows.Close()
+	var dependsOn []DependentNode
+	for outRows.Next() {
+		var d DependentNode
+		outRows.Scan(&d.Symbol, &d.FilePath, &d.Kind, &d.EdgeKind)
+		dependsOn = append(dependsOn, d)
+	}
+	outRows.Close()
+
+	// incoming edges (used_by)
+	inRows, err := db.Query(`
+		SELECT n1.symbol, n1.file_path, n1.kind, e.kind
+		FROM edges e JOIN nodes n1 ON n1.id = e.from_id
+		WHERE e.to_id = ? AND e.valid_until_commit IS NULL`, nd.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer inRows.Close()
+	var usedBy []DependentNode
+	for inRows.Next() {
+		var d DependentNode
+		inRows.Scan(&d.Symbol, &d.FilePath, &d.Kind, &d.EdgeKind)
+		usedBy = append(usedBy, d)
+	}
+	inRows.Close()
+
+	// historical edges (only if requested)
+	var historical []DependentNode
+	if includeInvalidated {
+		hRows, err := db.Query(`
+			SELECT n2.symbol, n2.file_path, n2.kind, e.kind
+			FROM edges e JOIN nodes n2 ON n2.id = e.to_id
+			WHERE e.from_id = ? AND e.valid_until_commit IS NOT NULL`, nd.ID)
+		if err != nil {
+			return nil, err
+		}
+		defer hRows.Close()
+		for hRows.Next() {
+			var d DependentNode
+			hRows.Scan(&d.Symbol, &d.FilePath, &d.Kind, &d.EdgeKind)
+			historical = append(historical, d)
+		}
+	}
+
+	// anchored observation IDs
+	aRows, err := db.Query(`SELECT engram_obs_id FROM engram_anchors WHERE node_id = ?`, nd.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer aRows.Close()
+	var obsIDs []string
+	for aRows.Next() {
+		var id string
+		aRows.Scan(&id)
+		obsIDs = append(obsIDs, id)
+	}
+
+	return &NodeInfoResult{
+		Node:            nd,
+		DependsOn:       dependsOn,
+		UsedBy:          usedBy,
+		HistoricalEdges: historical,
+		AnchoredObsIDs:  obsIDs,
+	}, nil
 }
 
 // Context returns aggregate project statistics for cg_context.
