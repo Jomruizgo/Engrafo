@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>engrafo</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, sans-serif; background: #0d1117; color: #e6edf3; display: flex; flex-direction: column; height: 100vh; }
+header { padding: 12px 20px; background: #161b22; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 16px; }
+header h1 { font-size: 1rem; font-weight: 600; color: #58a6ff; }
+#ctx-summary { font-size: 0.8rem; color: #8b949e; }
+#search { margin-left: auto; padding: 6px 12px; border: 1px solid #30363d; border-radius: 6px; background: #0d1117; color: #e6edf3; font-size: 0.85rem; width: 240px; }
+#search::placeholder { color: #484f58; }
+.tabs { display: flex; gap: 0; border-bottom: 1px solid #30363d; padding: 0 20px; background: #161b22; }
+.tab { padding: 8px 16px; font-size: 0.85rem; cursor: pointer; border-bottom: 2px solid transparent; color: #8b949e; }
+.tab.active { color: #58a6ff; border-bottom-color: #58a6ff; }
+main { display: flex; flex: 1; overflow: hidden; }
+#list { width: 320px; border-right: 1px solid #30363d; overflow-y: auto; flex-shrink: 0; }
+.node-item { padding: 10px 16px; border-bottom: 1px solid #21262d; cursor: pointer; font-size: 0.83rem; }
+.node-item:hover, .node-item.selected { background: #1c2128; }
+.node-item .sym { font-weight: 600; color: #79c0ff; word-break: break-all; }
+.node-item .meta { color: #8b949e; font-size: 0.75rem; margin-top: 2px; }
+.badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 0.7rem; font-weight: 500; margin-right: 4px; }
+.kind-function   { background: #1a3c4a; color: #79c0ff; }
+.kind-method     { background: #1a3c2a; color: #56d364; }
+.kind-class      { background: #3a2c1a; color: #f0883e; }
+.kind-interface  { background: #2c1a3a; color: #d2a8ff; }
+.kind-package    { background: #2a2a1a; color: #e3b341; }
+.kind-file       { background: #1e1e1e; color: #8b949e; }
+.kind-external   { background: #1e1e1e; color: #484f58; }
+#detail { flex: 1; padding: 20px; overflow-y: auto; }
+#detail h2 { font-size: 1rem; color: #58a6ff; margin-bottom: 12px; }
+.section { margin-bottom: 16px; }
+.section-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #8b949e; margin-bottom: 8px; border-bottom: 1px solid #21262d; padding-bottom: 4px; }
+.edge-item { padding: 4px 0; font-size: 0.82rem; color: #e6edf3; }
+.edge-item .edge-sym { color: #79c0ff; }
+.edge-item .edge-via { color: #8b949e; font-size: 0.75rem; }
+.empty { color: #484f58; font-size: 0.82rem; font-style: italic; }
+#deadcode-view { display: none; padding: 20px; overflow-y: auto; flex: 1; }
+#deadcode-view h2 { font-size: 0.9rem; color: #f0883e; margin-bottom: 12px; }
+.dead-item { padding: 8px 12px; margin-bottom: 4px; border-radius: 6px; background: #1c2128; font-size: 0.82rem; }
+.dead-item .dead-sym { color: #79c0ff; font-weight: 600; }
+.dead-item .dead-meta { color: #8b949e; font-size: 0.75rem; margin-top: 2px; }
+.orphan-label { color: #f85149; }
+.abandoned-label { color: #f0883e; }
+#loading { padding: 40px; text-align: center; color: #8b949e; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⬡ engrafo</h1>
+  <span id="ctx-summary">loading…</span>
+  <input id="search" placeholder="search symbols…" autocomplete="off">
+</header>
+<div class="tabs">
+  <div class="tab active" data-tab="graph">Graph</div>
+  <div class="tab" data-tab="deadcode">Dead Code</div>
+</div>
+<main>
+  <div id="list"><div id="loading">loading nodes…</div></div>
+  <div id="detail"><div class="empty">select a node</div></div>
+  <div id="deadcode-view"><div id="loading2">loading…</div></div>
+</main>
+
+<script>
+const api = path => fetch(path).then(r => r.json());
+
+let allNodes = [];
+let currentTab = 'graph';
+
+function kindBadge(kind) {
+  return `<span class="badge kind-${kind}">${kind}</span>`;
+}
+
+function renderNodeItem(n, idx) {
+  return `<div class="node-item" data-idx="${idx}">
+    <div class="sym">${n.symbol}</div>
+    <div class="meta">${kindBadge(n.kind)} ${n.file_path}</div>
+  </div>`;
+}
+
+function renderList(nodes) {
+  const list = document.getElementById('list');
+  if (!nodes.length) { list.innerHTML = '<div class="empty" style="padding:16px">no results</div>'; return; }
+  list.innerHTML = nodes.map((n, i) => renderNodeItem(n, i)).join('');
+  list.querySelectorAll('.node-item').forEach(el => {
+    el.addEventListener('click', () => {
+      list.querySelectorAll('.node-item').forEach(x => x.classList.remove('selected'));
+      el.classList.add('selected');
+      loadDetail(nodes[+el.dataset.idx]);
+    });
+  });
+}
+
+function loadDetail(n) {
+  const d = document.getElementById('detail');
+  d.innerHTML = '<div class="empty">loading…</div>';
+  api(`/api/node?symbol=${encodeURIComponent(n.symbol)}&kind=${encodeURIComponent(n.kind)}`)
+    .then(data => {
+      const nd = data.node || {};
+      const edgeList = arr => arr && arr.length
+        ? arr.map(e => `<div class="edge-item"><span class="edge-sym">${e.symbol}</span> <span class="edge-via">${e.file_path} · ${e.edge_kind || e.EdgeKind || ''}</span></div>`).join('')
+        : '<div class="empty">none</div>';
+      d.innerHTML = `
+        <h2>${n.symbol}</h2>
+        <div class="section">
+          <div class="section-title">location</div>
+          <div style="font-size:0.82rem;color:#8b949e">${nd.file_path}:${nd.line_start}–${nd.line_end} · ${nd.language}</div>
+        </div>
+        <div class="section">
+          <div class="section-title">depends on</div>
+          ${edgeList(data.depends_on)}
+        </div>
+        <div class="section">
+          <div class="section-title">used by</div>
+          ${edgeList(data.used_by)}
+        </div>
+        ${(data.historical_edges && data.historical_edges.length) ? `
+        <div class="section">
+          <div class="section-title">historical edges (invalidated)</div>
+          ${edgeList(data.historical_edges)}
+        </div>` : ''}
+        ${(data.anchored_observations && data.anchored_observations.length) ? `
+        <div class="section">
+          <div class="section-title">engram anchors</div>
+          ${data.anchored_observations.map(id => `<div class="edge-item" style="color:#d2a8ff">${id}</div>`).join('')}
+        </div>` : ''}
+      `;
+    })
+    .catch(() => { d.innerHTML = '<div class="empty">error loading node</div>'; });
+}
+
+function renderDeadcode() {
+  api('/api/deadcode').then(data => {
+    const v = document.getElementById('deadcode-view');
+    const orphanHTML = (data.orphans || []).map(o =>
+      `<div class="dead-item"><span class="orphan-label">orphan</span> <span class="dead-sym">${o.symbol}</span>
+       <div class="dead-meta">${o.kind} · ${o.file_path}</div></div>`
+    ).join('') || '<div class="empty">none</div>';
+    const abandonHTML = (data.abandoned || []).map(a =>
+      `<div class="dead-item"><span class="abandoned-label">abandoned</span> <span class="dead-sym">${a.symbol}</span>
+       <div class="dead-meta">${a.kind} · ${a.file_path} · peak=${a.peak_incoming_edges} · ${Math.round(a.days_since_abandoned)}d ago</div></div>`
+    ).join('') || '<div class="empty">none</div>';
+    v.innerHTML = `
+      <h2>Orphans (${(data.orphans||[]).length})</h2>${orphanHTML}
+      <h2 style="margin-top:20px">Abandoned (${(data.abandoned||[]).length})</h2>${abandonHTML}
+    `;
+  });
+}
+
+// Init
+api('/api/context').then(ctx => {
+  const langs = (ctx.languages || []).join(', ') || '—';
+  const stats = ctx.stats || {};
+  document.getElementById('ctx-summary').textContent =
+    `${stats.total_nodes || 0} symbols · ${langs}`;
+});
+
+api('/api/nodes').then(nodes => {
+  allNodes = nodes || [];
+  renderList(allNodes);
+});
+
+// Search
+document.getElementById('search').addEventListener('input', e => {
+  const q = e.target.value.trim();
+  if (!q) { renderList(allNodes); return; }
+  api(`/api/search?q=${encodeURIComponent(q)}&limit=50`).then(data => {
+    renderList(data.results || []);
+  });
+});
+
+// Tabs
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    currentTab = tab.dataset.tab;
+    const graphEls = [document.getElementById('list'), document.getElementById('detail')];
+    const dcEl = document.getElementById('deadcode-view');
+    if (currentTab === 'graph') {
+      graphEls.forEach(el => el.style.display = '');
+      dcEl.style.display = 'none';
+    } else {
+      graphEls.forEach(el => el.style.display = 'none');
+      dcEl.style.display = 'block';
+      renderDeadcode();
+    }
+  });
+});
+</script>
+</body>
+</html>

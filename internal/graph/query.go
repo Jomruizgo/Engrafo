@@ -282,6 +282,37 @@ func (q *Querier) NodeInfo(symbol, kind string, includeInvalidated bool) (*NodeI
 	}, nil
 }
 
+// AllNodes returns every non-external, non-file node in the graph.
+// limit <= 0 returns all nodes.
+func (q *Querier) AllNodes(limit int) ([]NodeSummary, error) {
+	qStr := `
+		SELECT n.symbol, n.kind, n.file_path,
+		       count(e.id) AS in_degree
+		FROM nodes n
+		LEFT JOIN edges e ON e.to_id = n.id AND e.valid_until_commit IS NULL
+		WHERE n.kind NOT IN ('external', 'file')
+		GROUP BY n.id
+		ORDER BY n.symbol
+	`
+	if limit > 0 {
+		qStr += fmt.Sprintf(" LIMIT %d", limit)
+	}
+	rows, err := q.store.db.Query(qStr)
+	if err != nil {
+		return nil, fmt.Errorf("all nodes query: %w", err)
+	}
+	defer rows.Close()
+	var out []NodeSummary
+	for rows.Next() {
+		var ns NodeSummary
+		if err := rows.Scan(&ns.Symbol, &ns.Kind, &ns.FilePath, &ns.InDegree); err != nil {
+			return nil, err
+		}
+		out = append(out, ns)
+	}
+	return out, rows.Err()
+}
+
 // Context returns aggregate project statistics for cg_context.
 func (q *Querier) Context() (*ProjectContext, error) {
 	db := q.store.db
