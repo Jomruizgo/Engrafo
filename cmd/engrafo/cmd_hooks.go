@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/Jomruizgo/Engrafo/internal/engram"
 )
 
 func cmdHooks(cfg *config, sub []string) error {
@@ -48,10 +50,17 @@ func hooksInstall(cfg *config) error {
 		return fmt.Errorf("create agent dir: %w", err)
 	}
 
+	// Ensure engram is installed. Failure is non-fatal: the user can install
+	// engram manually later; engrafo hooks still work without it.
+	fmt.Fprintf(cfg.stdout, "checking engram...\n")
+	if err := engram.EnsureCompatible(cfg.stdout); err != nil {
+		fmt.Fprintf(cfg.stdout, "  [WARN] continuing without engram — cg_anchor unavailable\n")
+	}
+
 	settingsPath := filepath.Join(agentDir, "settings.json")
 	settings := readJSONFile(settingsPath)
 
-	// MCP server entry
+	// MCP server entries — engrafo + engram
 	mcpServers, _ := settings["mcpServers"].(map[string]any)
 	if mcpServers == nil {
 		mcpServers = map[string]any{}
@@ -59,6 +68,11 @@ func hooksInstall(cfg *config) error {
 	mcpServers["engrafo"] = map[string]any{
 		"command": "engrafo",
 		"args":    []any{"serve"},
+		"env":     map[string]any{},
+	}
+	mcpServers["engram"] = map[string]any{
+		"command": "engram",
+		"args":    []any{"mcp"},
 		"env":     map[string]any{},
 	}
 	settings["mcpServers"] = mcpServers
@@ -113,9 +127,10 @@ func hooksUninstall(cfg *config) error {
 	settingsPath := filepath.Join(agentDir, "settings.json")
 	settings := readJSONFile(settingsPath)
 
-	// Remove MCP server
+	// Remove MCP servers added by engrafo
 	if mcpServers, ok := settings["mcpServers"].(map[string]any); ok {
 		delete(mcpServers, "engrafo")
+		delete(mcpServers, "engram")
 	}
 
 	// Remove hook events engrafo owns

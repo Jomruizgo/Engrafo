@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Jomruizgo/Engrafo/internal/engram"
 	"github.com/Jomruizgo/Engrafo/internal/graph"
+	"github.com/Jomruizgo/Engrafo/internal/version"
 )
 
 func cmdDoctor(cfg *config) error {
@@ -26,7 +28,7 @@ func cmdDoctor(cfg *config) error {
 		}
 	}
 
-	fmt.Fprintf(cfg.stdout, "engrafo doctor\n")
+	fmt.Fprintf(cfg.stdout, "engrafo doctor (v%s)\n", version.Current)
 
 	// Check 1: db file exists
 	_, statErr := os.Stat(dbPath)
@@ -41,6 +43,22 @@ func cmdDoctor(cfg *config) error {
 			s.Close()
 		}
 		check(openErr == nil, "db readable", "db may be corrupt — re-run: engrafo init")
+	}
+
+	// Check 3: engram
+	es := engram.Detect()
+	switch {
+	case !es.Found:
+		fmt.Fprintf(cfg.stdout, "  [FAIL] engram — not found\n")
+		fmt.Fprintf(cfg.stdout, "         cg_anchor and observation features unavailable\n")
+		fmt.Fprintf(cfg.stdout, "         run: engrafo hooks install  (auto-installs engram %s)\n",
+			version.EngramCompatible)
+		allPass = false
+	case es.Newer:
+		fmt.Fprintf(cfg.stdout, "  [WARN] engram v%s — newer than tested (%s); compatibility not guaranteed\n",
+			es.Version, version.EngramCompatible)
+	default:
+		fmt.Fprintf(cfg.stdout, "  [OK]   engram v%s\n", es.Version)
 	}
 
 	if !allPass {

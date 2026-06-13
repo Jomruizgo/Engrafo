@@ -57,18 +57,47 @@ Descarga el binario para tu plataforma desde [Releases](https://github.com/Jomru
 cd /tu/proyecto
 engrafo init
 
-# 2. Instalar hooks en Claude Code
+# 2. Instalar hooks + engram (auto-detecta e instala engram si no está)
 engrafo hooks install
 
-# 3. Iniciar el servidor MCP
-engrafo serve
+# 3. Verificar instalación completa
+engrafo doctor
 ```
+
+`hooks install` configura automáticamente los dos MCP servers (`engrafo` + `engram`) en el agente y registra los hooks de sesión.
 
 Para historia bi-temporal completa (mejor detección de dead code):
 
 ```sh
 engrafo init --from-git 50   # replaya los últimos 50 commits
 ```
+
+---
+
+## Integración con engram
+
+engrafo se integra con [engram](https://github.com/Gentleman-Programming/engram), el sistema de memoria episódica del ecosistema Gentle-AI. La integración es **opcional pero recomendada**: sin ella las herramientas estructurales funcionan completas, pero `cg_anchor` y el contenido de observaciones en `cg_history` quedan inactivos.
+
+**engram se instala automáticamente** al ejecutar `engrafo hooks install`. Si ya tienes Gentle-AI configurado, engram ya está instalado.
+
+### Compatibilidad de versiones
+
+| Situación | Comportamiento de `hooks install` |
+|---|---|
+| engram no instalado | Instala automáticamente la versión testeada |
+| engram en versión antigua | Actualiza a la versión testeada |
+| engram en versión testeada | OK, no hace nada |
+| engram en versión más nueva | Avisa, no hace downgrade (responsabilidad del usuario) |
+
+La versión de engram testeada con esta release está fijada en `internal/version.EngramCompatible`.
+
+### Sin engram
+
+| Herramienta | Sin engram |
+|---|---|
+| `cg_context`, `cg_node`, `cg_dependents`, `cg_dependencies`, `cg_impact`, `cg_search`, `cg_deadcode` | Funcionan completamente |
+| `cg_anchor` | Acepta llamadas pero los IDs no se resuelven |
+| `cg_history` | Devuelve el timeline de aristas; los `anchored_observations` son IDs vacíos |
 
 ---
 
