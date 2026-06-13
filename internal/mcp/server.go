@@ -6,15 +6,16 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/Jomruizgo/Engrafo/internal/graph"
+	"github.com/Jomruizgo/Engrafo/internal/version"
 )
 
-// Server is the engrafo MCP server exposing exactly 7 tools.
+// Server is the engrafo MCP server exposing all registered tools.
 type Server struct {
 	handlers *Handlers
 	mcp      *server.MCPServer
 }
 
-// New creates a new Server backed by the given Store and registers all 7 tools.
+// New creates a new Server backed by the given Store and registers all tools.
 func New(s *graph.Store) *Server {
 	h := NewHandlers(s)
 	srv := &Server{handlers: h}
@@ -32,11 +33,11 @@ func (s *Server) Serve() error {
 	return server.ServeStdio(s.mcp)
 }
 
-// buildMCP creates and configures the underlying MCPServer with all 7 tools.
+// buildMCP creates and configures the underlying MCPServer with all tools.
 func (s *Server) buildMCP() *server.MCPServer {
 	mcpSrv := server.NewMCPServer(
 		"engrafo",
-		"1.0.0",
+		version.Current,
 		server.WithToolCapabilities(true),
 	)
 

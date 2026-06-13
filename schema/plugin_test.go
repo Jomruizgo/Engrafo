@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"testing"
+
+	"github.com/Jomruizgo/Engrafo/internal/version"
 )
 
 // requiredPluginFields are the top-level keys that plugin.json must contain.
@@ -63,6 +65,21 @@ func TestPluginJSONMCPServer(t *testing.T) {
 	}
 	if _, ok := srv["args"]; !ok {
 		t.Error("mcp_server missing 'args' field")
+	}
+}
+
+func TestPluginJSONVersionMatchesCode(t *testing.T) {
+	data, err := os.ReadFile("../plugin.json")
+	if err != nil {
+		t.Fatalf("read plugin.json: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("plugin.json invalid JSON: %v", err)
+	}
+	got, _ := m["version"].(string)
+	if got != version.Current {
+		t.Errorf("plugin.json version %q != internal/version.Current %q — update one to match the other", got, version.Current)
 	}
 }
 
