@@ -139,3 +139,18 @@ func TestStatusFailsWithoutDB(t *testing.T) {
 		t.Error("want error from status when db missing, got nil")
 	}
 }
+
+func TestInitFromGitFailsOutsideRepo(t *testing.T) {
+	// Arrange: temp dir is not a git repository
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "graph.db")
+	var buf bytes.Buffer
+
+	// Act: init --from-git in a non-git dir must fail
+	err := runWith([]string{"--db", dbPath, "init", "--from-git", "5"}, nil, &buf)
+
+	// Assert: returns error (not a git repo)
+	if err == nil {
+		t.Error("want error for init --from-git outside git repo, got nil")
+	}
+}
