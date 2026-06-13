@@ -208,7 +208,30 @@ func TestCGAnchorHandler(t *testing.T) {
 	}
 }
 
-func TestServerHasSevenTools(t *testing.T) {
+func TestCGDeadcodeHandler(t *testing.T) {
+	// Arrange: seed a node that is an orphan (never referenced)
+	s := openTestStore(t)
+	b := graph.NewBuilder(s)
+	b.UpsertFile("commit-A", &parser.Result{
+		Nodes: []parser.Node{
+			{Symbol: "orphanFn", Kind: "function", FilePath: "orphan.go", Language: "go"},
+		},
+	})
+	h := engrafo.NewHandlers(s)
+
+	// Act
+	out := callHandler(t, h.CGDeadcode, nil)
+
+	// Assert
+	if _, ok := out["orphans"]; !ok {
+		t.Errorf("cg_deadcode response missing 'orphans' key; got %v", out)
+	}
+	if _, ok := out["abandoned"]; !ok {
+		t.Errorf("cg_deadcode response missing 'abandoned' key; got %v", out)
+	}
+}
+
+func TestServerHasEightTools(t *testing.T) {
 	// Arrange
 	s := openTestStore(t)
 
@@ -216,8 +239,8 @@ func TestServerHasSevenTools(t *testing.T) {
 	srv := engrafo.New(s)
 	count := srv.ToolCount()
 
-	// Assert
-	if count != 7 {
-		t.Errorf("want exactly 7 MCP tools, got %d", count)
+	// Assert: 7 v1.0 tools + cg_deadcode (v1.1)
+	if count != 8 {
+		t.Errorf("want exactly 8 MCP tools, got %d", count)
 	}
 }
