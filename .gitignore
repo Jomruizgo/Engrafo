@@ -1,0 +1,15 @@
+# engrafo index (regenerated on demand, not versioned)
+.engrafo/
+
+# Go build artifacts
+/engrafo
+/engrafo.exe
+*.test
+*.out
+
+# Go module cache
+vendor/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
