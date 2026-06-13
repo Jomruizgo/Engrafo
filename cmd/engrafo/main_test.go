@@ -146,8 +146,8 @@ func TestInitFromGitFailsOutsideRepo(t *testing.T) {
 	dbPath := filepath.Join(dir, "graph.db")
 	var buf bytes.Buffer
 
-	// Act: init --from-git in a non-git dir must fail
-	err := runWith([]string{"--db", dbPath, "init", "--from-git", "5"}, nil, &buf)
+	// Act: pass dir explicitly as root so init doesn't fallback to "." (repo CWD)
+	err := runWith([]string{"--db", dbPath, "init", "--from-git", "5", dir}, nil, &buf)
 
 	// Assert: returns error (not a git repo)
 	if err == nil {
