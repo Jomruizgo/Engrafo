@@ -10,7 +10,7 @@ Servidor MCP en Go que combina grafo de dependencias bi-temporal con memoria epi
 
 Los agentes de coding ya pueden consultar la estructura del código. Herramientas como Graphify, LSP, o búsqueda semántica responden "¿qué depende de X?". engram guarda observaciones sobre lo que ocurrió en sesiones anteriores. Ambas cosas existen por separado.
 
-El problema es la desconexión. Cuando el agente recuerda "este módulo tuvo un bug por su dependencia en `legacyValidator`", esa memoria vive en lenguaje natural sin vínculo al nodo real del grafo. Si `legacyValidator` desaparece del código, la observación queda huérfana. No hay forma de saber si lo que se aprendió sigue siendo relevante.
+El problema es la desconexión. Cuando el agente recuerda "este módulo tuvo un bug por su dependencia en (legacyValidator)", esa memoria vive en lenguaje natural sin vínculo al nodo real del grafo. Si (legacyValidator) desaparece del código, la observación queda huérfana. No hay forma de saber si lo que se aprendió sigue siendo relevante.
 
 engrafo nació para resolver eso: **anclar observaciones episódicas a nodos del grafo con historia bi-temporal**. El resultado es que cuando una dependencia cambia, las memorias asociadas a ese cambio son recuperables en contexto.
 
@@ -18,7 +18,7 @@ engrafo nació para resolver eso: **anclar observaciones episódicas a nodos del
 
 | Componente | Fuente de inspiración | Lo que engrafo añade |
 |---|---|---|
-| Grafo de dependencias | Graphify, code-review-graph | Modelo bi-temporal: aristas con `valid_from_commit` y `valid_until_commit` |
+| Grafo de dependencias | Graphify, code-review-graph | Modelo bi-temporal: aristas con (valid_from_commit) y (valid_until_commit) |
 | Memoria episódica | engram | Anclaje de observaciones a nodos específicos del grafo |
 | Detección de dead code | Análisis estático clásico | Detecta "abandonado" (tuvo referencias, las perdió) gracias al historial bi-temporal |
 
@@ -31,13 +31,29 @@ El cerebro humano no funciona así. No replays todo lo que ocurrió desde que na
 - **Memoria semántica/estructural** (cómo funciona algo, qué depende de qué) → engrafo
 - **Memoria de trabajo** (lo que estás procesando ahora) → la ventana de contexto
 
-La combinación de las dos primeras permite vaciar la tercera sin perder el hilo. Al inicio de una sesión, los hooks inyectan: contexto estructural del código (`cg_context`) + observaciones episódicas relevantes de sesiones anteriores (`mem_context`). El agente retoma el trabajo con el mismo mapa cognitivo, sin necesidad de haber acumulado miles de tokens de conversación previa.
+La combinación de las dos primeras permite vaciar la tercera sin perder el hilo. Al inicio de una sesión, los hooks inyectan: contexto estructural del código (cg_context) + observaciones episódicas relevantes de sesiones anteriores (mem_context). El agente retoma el trabajo con el mismo mapa cognitivo, sin necesidad de haber acumulado miles de tokens de conversación previa.
 
 En teoría esto debería funcionar porque la información que se pierde al limpiar el contexto (decisiones, errores, convenciones del proyecto) es exactamente lo que engram y engrafo persisten de forma estructurada. La hipótesis no está benchmarkeada; el diseño sí está fundamentado.
+
+## El grafo como alternativa a grep para reducir tokens
+
+Sin un grafo de dependencias, cuando el agente necesita entender la estructura del código hace búsquedas: grep sobre el árbol de archivos, lecturas de archivos para extraer imports y llamadas, y así recursivamente hasta tener el mapa. Cada archivo leído entra completo a la ventana de contexto aunque el agente solo necesite saber "quién depende de quién".
+
+Con engrafo, esa estructura está pre-indexada en SQLite. El agente emite una sola consulta al servidor MCP (por ejemplo, "qué archivos se ven afectados si cambio este módulo") y recibe únicamente la lista de nodos y aristas relevantes, sin cargar el contenido de ningún archivo. La diferencia en tokens es la que hay entre leer una tabla de contenidos y leer el libro completo.
+
+La ventaja es mayor cuanto más grande es el proyecto. En proyectos pequeños grep es suficiente. A partir de cierta escala, el grafo evita que el agente tenga que re-explorar la misma estructura en cada sesión o cada vez que necesita orientarse tras una compactación de contexto.
 
 ---
 
 ## Instalación
+
+El binario se instala **una vez por máquina** (instalación global). El índice del grafo y los hooks se configuran **por proyecto**: hay que estar ubicado en la carpeta del proyecto al ejecutar (engrafo init) y (engrafo hooks install).
+
+```
+máquina:   go install / brew / scoop  →  binario disponible en PATH
+proyecto:  cd /tu/proyecto && engrafo init  →  crea .engrafo/graph.db
+proyecto:  engrafo hooks install  →  configura .claude/settings.json
+```
 
 ### go install (recomendado)
 
@@ -105,9 +121,9 @@ engrafo init --from-git 50   # replaya los últimos 50 commits
 
 ## Integración con engram
 
-engrafo se integra con [engram](https://github.com/Gentleman-Programming/engram), el sistema de memoria episódica del ecosistema Gentle-AI. La integración es **opcional pero recomendada**: sin ella las herramientas estructurales funcionan completas, pero `cg_anchor` y el contenido de observaciones en `cg_history` quedan inactivos.
+engrafo se integra con [engram](https://github.com/Gentleman-Programming/engram), el sistema de memoria episódica del ecosistema Gentle-AI. La integración es **opcional pero recomendada**: sin ella las herramientas estructurales funcionan completas, pero (cg_anchor) y el contenido de observaciones en (cg_history) quedan inactivos.
 
-**engram se instala automáticamente** al ejecutar `engrafo hooks install`. Si ya tienes Gentle-AI configurado, engram ya está instalado.
+**engram se instala automáticamente** al ejecutar (engrafo hooks install). Si ya tienes Gentle-AI configurado, engram ya está instalado.
 
 ### Compatibilidad de versiones
 
@@ -118,7 +134,7 @@ engrafo se integra con [engram](https://github.com/Gentleman-Programming/engram)
 | engram en versión testeada | OK, no hace nada |
 | engram en versión más nueva | Avisa, no hace downgrade (responsabilidad del usuario) |
 
-La versión de engram testeada con esta release está fijada en `internal/version.EngramCompatible`.
+La versión de engram testeada con esta release está fijada en (internal/version.EngramCompatible).
 
 ### Sin engram
 
@@ -324,8 +340,8 @@ engrafo/
 ### Modelo de datos
 
 - **Nodos:** símbolos (funciones, clases, interfaces, paquetes) y archivos.
-- **Aristas:** dirigidas, con `valid_from_commit` (aparición) y `valid_until_commit` (desaparición). Nunca se eliminan — se invalidan.
-- **Anchors:** tabla `engram_anchors` vincula `engram_obs_id` → `node_id`.
+- **Aristas:** dirigidas, con (valid_from_commit) para la aparición y (valid_until_commit) para la desaparición. Nunca se eliminan — se invalidan.
+- **Anchors:** tabla (engram_anchors) vincula (engram_obs_id) → (node_id).
 
 ### CGO
 
