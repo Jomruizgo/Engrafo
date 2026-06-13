@@ -1,10 +1,39 @@
 # engrafo
 
-Servidor MCP en Go que construye un grafo estructural de tu código y lo expone a agentes de IA (Claude Code, GitHub Copilot, OpenCode). Sin runtime externo, sin API keys.
+> **Estado:** experimental. La arquitectura está fundamentada, los casos de uso son reales, pero el beneficio en tokens y en reducción de contexto no ha sido benchmarkeado sistemáticamente. Úsalo, mide, y reporta.
 
-**Por qué existe:** Los agentes de coding tienen buena memoria episódica (engram, etc.) pero no saben la estructura del código. `engrafo` responde preguntas como *"¿qué se rompe si modifico `UserRepository`?"* sin releer el código fuente.
+Servidor MCP en Go que combina grafo de dependencias bi-temporal con memoria episódica anclada, diseñado para reducir el consumo de tokens y eliminar el miedo a limpiar la ventana de contexto.
 
-**Diferenciador:** El grafo es **bi-temporal** — las aristas nunca se borran, se invalidan con el commit en que dejaron de existir. Esto permite detectar código abandonado con alta precisión y anclar observaciones de engram a nodos del grafo para que el agente no repita errores descartados.
+---
+
+## Por qué existe
+
+Los agentes de coding ya pueden consultar la estructura del código. Herramientas como Graphify, LSP, o búsqueda semántica responden "¿qué depende de X?". engram guarda observaciones sobre lo que ocurrió en sesiones anteriores. Ambas cosas existen por separado.
+
+El problema es la desconexión. Cuando el agente recuerda "este módulo tuvo un bug por su dependencia en `legacyValidator`", esa memoria vive en lenguaje natural sin vínculo al nodo real del grafo. Si `legacyValidator` desaparece del código, la observación queda huérfana. No hay forma de saber si lo que se aprendió sigue siendo relevante.
+
+engrafo nació para resolver eso: **anclar observaciones episódicas a nodos del grafo con historia bi-temporal**. El resultado es que cuando una dependencia cambia, las memorias asociadas a ese cambio son recuperables en contexto.
+
+## Qué combina
+
+| Componente | Fuente de inspiración | Lo que engrafo añade |
+|---|---|---|
+| Grafo de dependencias | Graphify, code-review-graph | Modelo bi-temporal: aristas con `valid_from_commit` y `valid_until_commit` |
+| Memoria episódica | engram | Anclaje de observaciones a nodos específicos del grafo |
+| Detección de dead code | Análisis estático clásico | Detecta "abandonado" (tuvo referencias, las perdió) gracias al historial bi-temporal |
+
+## El problema del contexto que engrafo intenta resolver
+
+La ventana de contexto de un agente es memoria de trabajo: rápida, limitada, volátil. Cuando se llena o se compacta, se pierde información sobre decisiones tomadas, enfoques descartados, bugs resueltos. La reacción habitual es no limpiarla, acumulando tokens que encarecen cada llamada.
+
+El cerebro humano no funciona así. No replays todo lo que ocurrió desde que naciste para retomar una tarea. Tienes:
+- **Memoria episódica** (qué pasó, cuándo, en qué contexto) → engram
+- **Memoria semántica/estructural** (cómo funciona algo, qué depende de qué) → engrafo
+- **Memoria de trabajo** (lo que estás procesando ahora) → la ventana de contexto
+
+La combinación de las dos primeras permite vaciar la tercera sin perder el hilo. Al inicio de una sesión, los hooks inyectan: contexto estructural del código (`cg_context`) + observaciones episódicas relevantes de sesiones anteriores (`mem_context`). El agente retoma el trabajo con el mismo mapa cognitivo, sin necesidad de haber acumulado miles de tokens de conversación previa.
+
+En teoría esto debería funcionar porque la información que se pierde al limpiar el contexto (decisiones, errores, convenciones del proyecto) es exactamente lo que engram y engrafo persisten de forma estructurada. La hipótesis no está benchmarkeada; el diseño sí está fundamentado.
 
 ---
 
