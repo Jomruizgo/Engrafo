@@ -69,3 +69,14 @@ func (p *Parser) ParseFile(filePath string) (*Result, error) {
 	}
 	return ext.Extract(filePath, src)
 }
+
+// ParseContent detects the language of filePath and extracts nodes/edges from content.
+// Useful when the file content is already in memory (e.g., from git show).
+func (p *Parser) ParseContent(filePath string, content []byte) (*Result, error) {
+	lang := Detect(filePath)
+	ext, ok := p.extractors[lang]
+	if !ok {
+		return nil, fmt.Errorf("no extractor for language %q (file: %s)", lang, filepath.Base(filePath))
+	}
+	return ext.Extract(filePath, content)
+}
