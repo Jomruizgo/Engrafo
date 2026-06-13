@@ -1,0 +1,138 @@
+{
+  "schema_version": "1.0",
+  "name": "engrafo",
+  "display_name": "Engrafo — Code Graph",
+  "version": "1.3.0",
+  "description": "Structural code graph for coding agents. Bi-temporal dependency analysis, symbol search, dead code detection, and change history — without re-reading source files.",
+  "author": "jomruizgo",
+  "license": "MIT",
+  "repository": "https://github.com/Jomruizgo/Engrafo",
+  "homepage": "https://github.com/Jomruizgo/Engrafo",
+  "category": "code-intelligence",
+  "tags": ["mcp", "code-graph", "dependency-analysis", "dead-code", "bi-temporal"],
+
+  "mcp_server": {
+    "command": "engrafo",
+    "args": ["serve"],
+    "env": {},
+    "transport": "stdio",
+    "description": "Starts the engrafo MCP server. Run `engrafo init` first to index your repository."
+  },
+
+  "tools": [
+    {
+      "name": "cg_context",
+      "description": "Returns project-level context: total node count, languages, top symbols by incoming-edge degree, and per-kind counts. Use this as the first call in any session to orient the agent."
+    },
+    {
+      "name": "cg_node",
+      "description": "Returns full details for a single symbol: active outgoing and incoming edges, historical invalidated edges (with valid_until_commit), engram observation anchors, and dead-code classification. The primary tool for understanding a specific symbol."
+    },
+    {
+      "name": "cg_dependents",
+      "description": "Returns all nodes with active incoming edges to the given file. Answers: what will break if I change this file?"
+    },
+    {
+      "name": "cg_dependencies",
+      "description": "Returns all nodes that the given file depends on via active outgoing edges. Answers: what does this file use?"
+    },
+    {
+      "name": "cg_impact",
+      "description": "Transitive blast-radius analysis up to N hops. Returns the full set of files affected by a change to the target file, with depth information."
+    },
+    {
+      "name": "cg_search",
+      "description": "FTS5 full-text search over symbol names. Supports SQLite FTS5 match syntax. Returns up to limit results ranked by relevance."
+    },
+    {
+      "name": "cg_verify",
+      "description": "Verifies index integrity and freshness against HEAD. Reports whether the index is stale, the last indexed commit, and any schema issues."
+    },
+    {
+      "name": "cg_deadcode",
+      "description": "Detects dead-code candidates. Orphans: nodes that never had any incoming edge. Abandoned: nodes that had incoming edges and lost them all. The bi-temporal model makes abandoned detection highly accurate — these were actively used and then dropped."
+    }
+  ],
+
+  "cli": {
+    "init": {
+      "command": "engrafo init [root]",
+      "description": "Index the repository from the current working tree. Creates .engrafo/graph.db."
+    },
+    "init_from_git": {
+      "command": "engrafo init --from-git N [root]",
+      "description": "Replay the last N git commits to build bi-temporal history. More accurate for dead-code detection."
+    },
+    "update": {
+      "command": "engrafo update",
+      "description": "Incremental update: re-index only files changed since the last indexed commit."
+    },
+    "serve": {
+      "command": "engrafo serve",
+      "description": "Start the MCP server on stdio. Used by MCP host configuration."
+    },
+    "ui": {
+      "command": "engrafo ui [--port N]",
+      "description": "Start the local graph browser at http://localhost:8080. Shows force-directed graph, symbol search, node detail with active/historical edges, and dead-code tab."
+    },
+    "deadcode": {
+      "command": "engrafo deadcode [--json] [--threshold-days N]",
+      "description": "Print dead-code candidates to stdout."
+    },
+    "status": {
+      "command": "engrafo status",
+      "description": "Show index statistics: node count, edge count, last commit, freshness."
+    },
+    "doctor": {
+      "command": "engrafo doctor",
+      "description": "Verify installation: check db exists, schema version, FTS5 support."
+    },
+    "hooks_install": {
+      "command": "engrafo hooks install",
+      "description": "Install Claude Code hooks (SessionStart, PreToolUse Read/Write, PostToolUse) into .claude/settings.json."
+    }
+  },
+
+  "install": {
+    "go": "go install github.com/Jomruizgo/Engrafo/cmd/engrafo@latest",
+    "brew": "brew install jomruizgo/tap/engrafo",
+    "scoop": "scoop install engrafo",
+    "manual": "Download the binary for your platform from https://github.com/Jomruizgo/Engrafo/releases"
+  },
+
+  "quickstart": [
+    "engrafo init",
+    "engrafo hooks install",
+    "engrafo serve"
+  ],
+
+  "agent_configs": {
+    "claude_code": {
+      "settings_path": ".claude/settings.json",
+      "install_command": "engrafo hooks install",
+      "mcp_config": {
+        "mcpServers": {
+          "engrafo": {
+            "command": "engrafo",
+            "args": ["serve"],
+            "env": {}
+          }
+        }
+      }
+    },
+    "github_copilot": {
+      "hooks_path": ".github/hooks/",
+      "install_command": "engrafo hooks install --agent copilot"
+    },
+    "opencode": {
+      "settings_path": ".opencode/settings.json",
+      "install_command": "engrafo hooks install --agent opencode"
+    }
+  },
+
+  "compatibility": {
+    "go_version": "1.22+",
+    "cgo_required": false,
+    "platforms": ["linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64", "windows/amd64"]
+  }
+}
