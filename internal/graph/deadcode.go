@@ -1,21 +1,25 @@
 package graph
 
+import "fmt"
+
 // OrphanNode is a node that never had any incoming edges.
 type OrphanNode struct {
-	Symbol    string
-	Kind      string
-	FilePath  string
-	Language  string
+	Symbol   string
+	Kind     string
+	FilePath string
+	Language string
 }
 
 // AbandonedNode is a node that once had incoming edges but now has none.
+// DaysSinceAbandoned is approximate: based on the created_at of the last
+// invalidated edge, not on the git commit timestamp.
 type AbandonedNode struct {
-	Symbol              string
-	Kind                string
-	FilePath            string
-	Language            string
-	PeakIncomingEdges   int
-	DaysSinceAbandoned  float64
+	Symbol             string
+	Kind               string
+	FilePath           string
+	Language           string
+	PeakIncomingEdges  int
+	DaysSinceAbandoned float64
 }
 
 // DeadcodeResult holds the output of a dead-code scan.
@@ -24,9 +28,108 @@ type DeadcodeResult struct {
 	Abandoned []AbandonedNode
 }
 
-// Deadcode scans the graph for orphan and abandoned nodes.
-// thresholdDays: only include nodes active for more than N days (0 = no filter).
-// BLOQUEANTE: stub — implementación pendiente en feature/cg-deadcode green.
-func (q *Querier) Deadcode(_ int) (*DeadcodeResult, error) {
-	return nil, nil
+// Deadcode scans the graph for dead-code candidates.
+//
+// Orphans: nodes that never had any incoming edge (all-time zero references).
+// Abandoned: nodes that once had incoming edges but have none active now.
+//
+// Filters applied automatically:
+//   - kind IN (external, file, package) excluded
+//   - test files (*_test.go) excluded
+//   - exported Go symbols (uppercase first char) excluded
+//   - symbol "main" excluded
+//
+// thresholdDays: skip nodes whose most recent edge activity is less than
+// thresholdDays old. 0 means no filter.
+func (q *Querier) Deadcode(thresholdDays int) (*DeadcodeResult, error) {
+	orphans, err := q.queryOrphans(thresholdDays)
+	if err != nil {
+		return nil, fmt.Errorf("orphans: %w", err)
+	}
+	abandoned, err := q.queryAbandoned(thresholdDays)
+	if err != nil {
+		return nil, fmt.Errorf("abandoned: %w", err)
+	}
+	return &DeadcodeResult{Orphans: orphans, Abandoned: abandoned}, nil
+}
+
+// deadcodeFilter is the shared WHERE clause for both queries.
+// Placeholders must be appended after this.
+const deadcodeFilter = `
+    n.kind NOT IN ('external', 'file', 'package')
+    AND n.file_path NOT LIKE '%_test.go'
+    AND NOT (n.language = 'go' AND n.symbol GLOB '[A-Z]*')
+    AND n.symbol != 'main'
+`
+
+func (q *Querier) queryOrphans(thresholdDays int) ([]OrphanNode, error) {
+	sqlStr := `
+		SELECT n.symbol, n.kind, n.file_path, n.language
+		FROM nodes n
+		WHERE ` + deadcodeFilter + `
+		  AND NOT EXISTS (
+		      SELECT 1 FROM edges e WHERE e.to_id = n.id
+		  )
+	`
+	if thresholdDays > 0 {
+		sqlStr += fmt.Sprintf(`
+		  AND julianday('now') - julianday(n.created_at) > %d`, thresholdDays)
+	}
+
+	rows, err := q.store.db.Query(sqlStr)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []OrphanNode
+	for rows.Next() {
+		var o OrphanNode
+		if err := rows.Scan(&o.Symbol, &o.Kind, &o.FilePath, &o.Language); err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+func (q *Querier) queryAbandoned(thresholdDays int) ([]AbandonedNode, error) {
+	sqlStr := `
+		SELECT n.symbol, n.kind, n.file_path, n.language,
+		       COUNT(e_hist.id) AS peak_incoming_edges,
+		       COALESCE(
+		           julianday('now') - julianday(MAX(e_hist.created_at)),
+		           0
+		       ) AS days_since_abandoned
+		FROM nodes n
+		JOIN edges e_hist ON e_hist.to_id = n.id AND e_hist.valid_until_commit IS NOT NULL
+		WHERE ` + deadcodeFilter + `
+		  AND NOT EXISTS (
+		      SELECT 1 FROM edges e WHERE e.to_id = n.id AND e.valid_until_commit IS NULL
+		  )
+	`
+	if thresholdDays > 0 {
+		sqlStr += fmt.Sprintf(`
+		  AND (julianday('now') - julianday(MAX(e_hist.created_at))) > %d`, thresholdDays)
+	}
+	sqlStr += `
+		GROUP BY n.id
+	`
+
+	rows, err := q.store.db.Query(sqlStr)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []AbandonedNode
+	for rows.Next() {
+		var a AbandonedNode
+		if err := rows.Scan(&a.Symbol, &a.Kind, &a.FilePath, &a.Language,
+			&a.PeakIncomingEdges, &a.DaysSinceAbandoned); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
 }
