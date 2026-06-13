@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io/fs"
 	"os"
@@ -30,11 +31,17 @@ func newParser() *parser.Parser {
 }
 
 func cmdInit(cfg *config, args []string) error {
-	root := "."
-	if len(args) > 0 {
-		root = args[0]
+	fs2 := flag.NewFlagSet("init", flag.ContinueOnError)
+	fromGit := fs2.Int("from-git", 0, "build bi-temporal history from last N git commits")
+	fs2.SetOutput(cfg.stdout)
+	if err := fs2.Parse(args); err != nil {
+		return err
 	}
 
+	root := "."
+	if rest := fs2.Args(); len(rest) > 0 {
+		root = rest[0]
+	}
 	root, err := filepath.Abs(root)
 	if err != nil {
 		return err
@@ -49,6 +56,14 @@ func cmdInit(cfg *config, args []string) error {
 		return fmt.Errorf("create .engrafo dir: %w", err)
 	}
 
+	if *fromGit > 0 {
+		return initFromGit(cfg, root, dbPath, *fromGit)
+	}
+	return initFull(cfg, root, dbPath)
+}
+
+// initFull indexes the current working tree (default init behavior).
+func initFull(cfg *config, root, dbPath string) error {
 	s, err := graph.Open(dbPath)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
@@ -56,13 +71,12 @@ func cmdInit(cfg *config, args []string) error {
 	defer s.Close()
 
 	commitHash := currentHEAD(root)
-
 	p := newParser()
 	b := graph.NewBuilder(s)
 
 	var indexed, skipped int
-	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
+	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
 			return nil
 		}
 		if d.IsDir() {
@@ -106,6 +120,100 @@ func cmdInit(cfg *config, args []string) error {
 
 	fmt.Fprintf(cfg.stdout, "indexed %d files (%d skipped) — db: %s\n", indexed, skipped, dbPath)
 	return nil
+}
+
+// initFromGit builds the bi-temporal graph by replaying the last N git commits.
+// Commits are processed oldest-first so that edge invalidation is correct.
+func initFromGit(cfg *config, root, dbPath string, n int) error {
+	// Require git repo
+	if _, err := exec.Command("git", "-C", root, "rev-parse", "--git-dir").Output(); err != nil {
+		return fmt.Errorf("init --from-git: not a git repository at %s", root)
+	}
+
+	// Get last N commits (newest first)
+	hashesOut, err := exec.Command("git", "-C", root,
+		"log", "--format=%H", fmt.Sprintf("-%d", n)).Output()
+	if err != nil {
+		return fmt.Errorf("git log: %w", err)
+	}
+	hashes := strings.Fields(strings.TrimSpace(string(hashesOut)))
+	if len(hashes) == 0 {
+		return fmt.Errorf("no commits found")
+	}
+
+	// Reverse: process oldest first
+	for i, j := 0, len(hashes)-1; i < j; i, j = i+1, j-1 {
+		hashes[i], hashes[j] = hashes[j], hashes[i]
+	}
+
+	s, err := graph.Open(dbPath)
+	if err != nil {
+		return fmt.Errorf("open db: %w", err)
+	}
+	defer s.Close()
+
+	p := newParser()
+	b := graph.NewBuilder(s)
+
+	var totalFiles int
+	for i, hash := range hashes {
+		var prevHash string
+		if i > 0 {
+			prevHash = hashes[i-1]
+		}
+
+		changed := changedFiles(root, hash, prevHash)
+		for _, relPath := range changed {
+			if parser.Detect(relPath) == "" {
+				continue
+			}
+
+			// Read file content at this commit via git show
+			content, showErr := exec.Command("git", "-C", root, "show", hash+":"+relPath).Output()
+			if showErr != nil {
+				continue // file deleted in this commit
+			}
+
+			result, parseErr := p.ParseContent(relPath, content)
+			if parseErr != nil {
+				continue
+			}
+
+			norm := filepath.ToSlash(relPath)
+			for j := range result.Nodes {
+				result.Nodes[j].FilePath = norm
+			}
+
+			b.UpsertFile(hash, result)
+			totalFiles++
+		}
+
+		fmt.Fprintf(cfg.stdout, "  [%d/%d] %s\n", i+1, len(hashes), hash[:12])
+	}
+
+	headHash := hashes[len(hashes)-1]
+	db := s.DB()
+	db.Exec(`INSERT OR REPLACE INTO index_meta(key,value) VALUES('last_commit_hash',?)`, headHash)
+	db.Exec(`INSERT OR REPLACE INTO index_meta(key,value) VALUES('repo_root',?)`, root)
+	db.Exec(`INSERT OR REPLACE INTO index_meta(key,value) VALUES('indexed_at',datetime('now'))`)
+
+	fmt.Fprintf(cfg.stdout, "replayed %d commits, %d file-versions — db: %s\n",
+		len(hashes), totalFiles, dbPath)
+	return nil
+}
+
+// changedFiles returns the files changed in hash relative to prevHash.
+// When prevHash is empty, returns all files introduced in hash.
+func changedFiles(root, hash, prevHash string) []string {
+	var out []byte
+	if prevHash == "" {
+		out, _ = exec.Command("git", "-C", root,
+			"diff-tree", "--no-commit-id", "-r", "--name-only", hash).Output()
+	} else {
+		out, _ = exec.Command("git", "-C", root,
+			"diff", "--name-only", prevHash+".."+hash).Output()
+	}
+	return strings.Fields(strings.TrimSpace(string(out)))
 }
 
 func currentHEAD(repoRoot string) string {
