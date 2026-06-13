@@ -11,7 +11,7 @@ import (
 )
 
 // Tool names exposed by the MCP server.
-// 7 tools in v1.0 + cg_deadcode in v1.1.
+// 7 tools in v1.0 + cg_deadcode (v1.1) + cg_history (v1.1).
 const (
 	ToolCGContext      = "cg_context"
 	ToolCGNode         = "cg_node"
@@ -21,6 +21,7 @@ const (
 	ToolCGSearch       = "cg_search"
 	ToolCGAnchor       = "cg_anchor"
 	ToolCGDeadcode     = "cg_deadcode"
+	ToolCGHistory      = "cg_history"
 )
 
 // Handlers holds the dependencies used by all tool handlers.
@@ -238,5 +239,47 @@ func (h *Handlers) CGDeadcode(_ context.Context, req mcplib.CallToolRequest) (*m
 	return jsonResult(map[string]any{
 		"orphans":   orphans,
 		"abandoned": abandoned,
+	})
+}
+
+// CGHistory implements the cg_history MCP tool (v1.1).
+// Returns the chronological edge timeline for a node: when dependencies appeared and disappeared.
+func (h *Handlers) CGHistory(_ context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	args := req.GetArguments()
+	symbol, _ := args["symbol"].(string)
+	if symbol == "" {
+		return errResult("symbol is required"), nil
+	}
+	kind, _ := args["kind"].(string)
+
+	result, err := h.querier.History(symbol, kind)
+	if err != nil {
+		return errResult(fmt.Sprintf("history: %v", err)), nil
+	}
+
+	events := make([]map[string]any, 0, len(result.Timeline))
+	for _, ev := range result.Timeline {
+		events = append(events, map[string]any{
+			"commit":           ev.Commit,
+			"event_type":       ev.EventType,
+			"target_symbol":    ev.TargetSymbol,
+			"target_file_path": ev.TargetFilePath,
+			"target_kind":      ev.TargetKind,
+			"edge_kind":        ev.EdgeKind,
+		})
+	}
+
+	obsIDs := result.AnchoredObsIDs
+	if obsIDs == nil {
+		obsIDs = []string{}
+	}
+
+	return jsonResult(map[string]any{
+		"symbol":                result.Symbol,
+		"kind":                  result.Kind,
+		"file_path":             result.FilePath,
+		"language":              result.Language,
+		"timeline":              events,
+		"anchored_observations": obsIDs,
 	})
 }

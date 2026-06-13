@@ -110,5 +110,14 @@ func (s *Server) buildMCP() *server.MCPServer {
 		s.handlers.CGDeadcode,
 	)
 
+	mcpSrv.AddTool(
+		mcplib.NewTool(ToolCGHistory,
+			mcplib.WithDescription("Returns the chronological edge timeline for a symbol: when dependencies appeared and disappeared, with associated engram anchors."),
+			mcplib.WithString("symbol", mcplib.Required(), mcplib.Description("Symbol name to inspect")),
+			mcplib.WithString("kind", mcplib.Description("Optional kind filter: function, class, method, interface")),
+		),
+		s.handlers.CGHistory,
+	)
+
 	return mcpSrv
 }
