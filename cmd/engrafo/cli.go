@@ -84,6 +84,8 @@ func runWith(args []string, stdin io.Reader, stdout io.Writer) error {
 		return cmdHook(cfg, rest[1:])
 	case "deadcode":
 		return cmdDeadcode(cfg, rest[1:])
+	case "ui":
+		return cmdUI(cfg, rest[1:])
 	default:
 		return fmt.Errorf("unknown command %q — run engrafo --help", rest[0])
 	}
@@ -108,6 +110,7 @@ Commands:
   hook pre-read        pre-read hook handler
   hook pre-write       pre-write hook handler
   deadcode             list dead-code candidates (orphans + abandoned)
+  ui                   start graph browser on localhost:8080
 
 Flags:
   --db <path>          override graph.db path (default: .engrafo/graph.db)
