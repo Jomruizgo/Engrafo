@@ -1,7 +1,10 @@
+//go:build cgo
+
 package engrafo_test
 
 // Integration tests for v1.0 success criteria (PRD section "Criterios de éxito").
 // These tests cross package boundaries to verify end-to-end data flow.
+// Require CGO (tree-sitter parser extractors).
 
 import (
 	"path/filepath"
