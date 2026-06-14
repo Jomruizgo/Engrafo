@@ -2,7 +2,7 @@ package version
 
 // Current is the canonical engrafo version.
 // Update this when cutting a release; plugin.json must match.
-const Current = "2.0.4"
+const Current = "2.0.5"
 
 // EngramCompatible is the pinned engram version that engrafo has been tested against.
 // engrafo installs this version automatically if engram is absent or older.

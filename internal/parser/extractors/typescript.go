@@ -1,9 +1,10 @@
-﻿//go:build cgo
+//go:build cgo
 
 package extractors
 
 import (
 	"fmt"
+	"path"
 	"strings"
 
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
@@ -83,7 +84,6 @@ func (e *TypeScriptExtractor) Extract(filePath string, source []byte) (*parser.R
 	// method definitions (inside class body)
 	for _, cap := range queryAll(lang, root, source,
 		`(method_definition name: (property_identifier) @name)`, "name") {
-		// skip constructor â€” it's a language keyword, not a user-defined method symbol
 		if cap.text == "constructor" {
 			continue
 		}
@@ -97,13 +97,20 @@ func (e *TypeScriptExtractor) Extract(filePath string, source []byte) (*parser.R
 		})
 	}
 
-	// import edges â€” source is a string literal like "'events'"
+	// import edges
+	// Relative imports (starting with ".") are resolved to a project-root-relative
+	// path so the builder can match against file nodes (e.g. "src/utils" -> "src/utils.ts").
+	// External package imports use only the last path segment.
 	for _, cap := range queryAll(lang, root, source,
 		`(import_statement source: (string) @src)`, "src") {
 		raw := strings.Trim(cap.text, `"'`)
-		// use last segment of the module path
-		parts := strings.Split(raw, "/")
-		sym := parts[len(parts)-1]
+		var sym string
+		if strings.HasPrefix(raw, ".") {
+			sym = path.Clean(path.Join(path.Dir(filePath), raw))
+		} else {
+			parts := strings.Split(raw, "/")
+			sym = parts[len(parts)-1]
+		}
 		edges = append(edges, parser.Edge{
 			FromSymbol: filePath,
 			ToSymbol:   sym,
@@ -111,7 +118,7 @@ func (e *TypeScriptExtractor) Extract(filePath string, source []byte) (*parser.R
 		})
 	}
 
-	// inheritance edges â€” class Foo extends Bar â†’ inherits
+	// inheritance edges
 	for _, cap := range queryAll(lang, root, source,
 		`(extends_clause value: (identifier) @parent)`, "parent") {
 		edges = append(edges, parser.Edge{

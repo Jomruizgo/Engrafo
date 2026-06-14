@@ -3,6 +3,7 @@
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/Jomruizgo/Engrafo/v2/internal/parser"
 )
@@ -221,6 +222,11 @@ func invalidateEdge(tx *sql.Tx, edgeID, revID int64) error {
 
 // resolveOrCreateNode finds an existing non-external node by symbol in the given root,
 // or creates an external stub scoped to that root.
+//
+// For TypeScript relative imports the extractor emits a resolved path without
+// extension (e.g. "src/components/utils"). A second pass tries to match a file
+// node whose file_path starts with that prefix, covering the common patterns
+// "utils.ts", "utils/index.ts", "utils.js", etc.
 func resolveOrCreateNode(tx *sql.Tx, rootID int64, symbol string) (int64, error) {
 	var id int64
 	err := tx.QueryRow(
@@ -232,6 +238,24 @@ func resolveOrCreateNode(tx *sql.Tx, rootID int64, symbol string) (int64, error)
 	}
 	if err != sql.ErrNoRows {
 		return 0, err
+	}
+	// Path-prefix fallback: symbol looks like a relative path (contains "/").
+	// Match file nodes whose file_path equals symbol with a common extension appended,
+	// or is an index file inside that directory.
+	if strings.Contains(symbol, "/") {
+		err2 := tx.QueryRow(
+			`SELECT id FROM nodes WHERE root_id=? AND kind='file'
+			 AND (file_path=? OR file_path LIKE ? OR file_path LIKE ?) LIMIT 1`,
+			rootID, symbol,
+			symbol+".%",           // src/utils.ts, src/utils.js, src/utils.tsx …
+			symbol+"/index.%",     // src/utils/index.ts …
+		).Scan(&id)
+		if err2 == nil {
+			return id, nil
+		}
+		if err2 != sql.ErrNoRows {
+			return 0, err2
+		}
 	}
 	return upsertNode(tx, rootID, symbol, "external", ":external:", 0, 0, "external", "")
 }
