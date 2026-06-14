@@ -67,19 +67,20 @@ CGO_ENABLED=1 go install github.com/Jomruizgo/Engrafo/v2/cmd/engrafo@latest
 
 #### CGO en Windows
 
-Requiere un compilador C compatible. GCC 16 (MSYS2 mingw64) está roto con Go 1.25.x. Opciones probadas:
+Requiere un compilador C compatible con Go 1.25.x. TDM-GCC 10.x está roto (produce binarios que Windows rechaza). Opciones probadas:
 
 | Opción | GCC | Instalación |
 |---|---|---|
-| **TDM-GCC** (recomendado) | 10.x | [jmeubank.github.io/tdm-gcc](https://jmeubank.github.io/tdm-gcc/) — instala en `C:\TDM-GCC-64` |
+| **MSYS2 mingw64** (recomendado) | 16.x | [msys2.org](https://www.msys2.org/) → `pacman -S mingw-w64-x86_64-gcc` |
+| **MSYS2 ucrt64** | 14–16.x | `pacman -S mingw-w64-ucrt-x86_64-gcc` — variante ucrt |
 | **w64devkit** | 13.x | [github.com/skeeto/w64devkit](https://github.com/skeeto/w64devkit/releases) — portable, sin instalador |
-| **MSYS2 ucrt64** | 14.x | `pacman -S mingw-w64-ucrt-x86_64-gcc` — usar ucrt64, no mingw64 |
 
-Tras instalar, verificar que `gcc --version` muestre la versión compatible (no 16.x), luego:
+Tras instalar MSYS2, agrega `C:\msys64\mingw64\bin` al PATH de usuario y luego:
 
 ```sh
-gcc --version       # debe ser ≤ 14
-CGO_ENABLED=1 go install github.com/Jomruizgo/Engrafo/v2/cmd/engrafo@latest
+gcc --version       # debe reportar mingw64 o ucrt64, no TDM-GCC
+set CGO_ENABLED=1
+go install github.com/Jomruizgo/Engrafo/v2/cmd/engrafo@latest
 engrafo doctor
 ```
 

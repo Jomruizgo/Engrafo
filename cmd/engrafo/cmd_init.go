@@ -243,7 +243,9 @@ func initFromGitRoot(cfg *config, s *graph.Store, resolved graph.ResolvedRoot, n
 			for j := range result.Nodes {
 				result.Nodes[j].FilePath = norm
 			}
-			b.UpsertFile(rootID, revID, "", result)
+			if uErr := b.UpsertFile(rootID, revID, "", result); uErr != nil {
+				fmt.Fprintf(cfg.stdout, "    [WARN] upsert %s: %v\n", norm, uErr)
+			}
 			totalFiles++
 		}
 		fmt.Fprintf(cfg.stdout, "  [%s %d/%d] %s\n", resolved.Name, i+1, len(hashes), hash[:12])
