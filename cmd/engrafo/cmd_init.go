@@ -12,6 +12,7 @@ import (
 	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
 	"github.com/Jomruizgo/Engrafo/v2/internal/parser"
 	"github.com/Jomruizgo/Engrafo/v2/internal/parser/extractors"
+	"github.com/Jomruizgo/Engrafo/v2/internal/workspace"
 )
 
 // skipDirs are directory names that are never indexed.
@@ -56,10 +57,52 @@ func cmdInit(cfg *config, args []string) error {
 		return fmt.Errorf("create .engrafo dir: %w", err)
 	}
 
+	// Modo workspace: iterar cada raíz del manifest.
+	if cfg.manifestPath != "" {
+		return initWorkspace(cfg, dbPath, *fromGit)
+	}
+
 	if *fromGit > 0 {
 		return initFromGit(cfg, root, dbPath, *fromGit)
 	}
 	return initFull(cfg, root, dbPath)
+}
+
+// initWorkspace inicializa todas las raíces del manifest, una a una.
+// Si fromGit > 0, las raíces git se replayan; las none se indexan full.
+func initWorkspace(cfg *config, dbPath string, fromGit int) error {
+	m, err := workspace.Load(cfg.manifestPath)
+	if err != nil {
+		return fmt.Errorf("load manifest: %w", err)
+	}
+
+	s, err := graph.Open(dbPath)
+	if err != nil {
+		return fmt.Errorf("open db: %w", err)
+	}
+	defer s.Close()
+
+	for _, spec := range m.Roots {
+		resolved, resolveErr := spec.Resolve(cfg.workspaceDir)
+		if resolveErr != nil {
+			fmt.Fprintf(cfg.stdout, "  [%s] skip: %v\n", spec.Name, resolveErr)
+			continue
+		}
+		if fromGit > 0 && resolved.VCS == "git" {
+			if err := initFromGitRoot(cfg, s, resolved, fromGit); err != nil {
+				fmt.Fprintf(cfg.stdout, "  [%s] error: %v\n", resolved.Name, err)
+			}
+		} else {
+			if fromGit > 0 && resolved.VCS != "git" {
+				fmt.Fprintf(cfg.stdout, "  [%s] vcs=none — indexando full (sin replay git)\n", resolved.Name)
+			}
+			if err := initRoot(cfg, s, resolved); err != nil {
+				fmt.Fprintf(cfg.stdout, "  [%s] error: %v\n", resolved.Name, err)
+			}
+		}
+	}
+	fmt.Fprintf(cfg.stdout, "workspace indexado — %d raíces — db: %s\n", len(m.Roots), dbPath)
+	return nil
 }
 
 // initFull indexes the current working tree (default init behavior).
@@ -143,6 +186,70 @@ func initFull(cfg *config, root, dbPath string) error {
 	s.SetRootIndexed(rootID, commitHash)
 
 	fmt.Fprintf(cfg.stdout, "indexed %d files (%d skipped) â€” db: %s\n", indexed, skipped, dbPath)
+	return nil
+}
+
+// initFromGitRoot replaya los últimos n commits de una raíz resuelta usando un Store ya abierto.
+func initFromGitRoot(cfg *config, s *graph.Store, resolved graph.ResolvedRoot, n int) error {
+	root := resolved.AbsRoot
+	if _, err := exec.Command("git", "-C", root, "rev-parse", "--git-dir").Output(); err != nil {
+		return fmt.Errorf("not a git repository at %s", root)
+	}
+
+	hashesOut, err := exec.Command("git", "-C", root,
+		"log", "--format=%H", fmt.Sprintf("-%d", n)).Output()
+	if err != nil {
+		return fmt.Errorf("git log: %w", err)
+	}
+	hashes := strings.Fields(strings.TrimSpace(string(hashesOut)))
+	if len(hashes) == 0 {
+		return fmt.Errorf("no commits found in %s", resolved.Name)
+	}
+	for i, j := 0, len(hashes)-1; i < j; i, j = i+1, j-1 {
+		hashes[i], hashes[j] = hashes[j], hashes[i]
+	}
+
+	rootID, err := s.UpsertRoot(resolved)
+	if err != nil {
+		return fmt.Errorf("upsert root: %w", err)
+	}
+
+	p := newParser()
+	b := graph.NewBuilder(s)
+
+	var totalFiles int
+	for i, hash := range hashes {
+		revID, err := s.CreateRevision(rootID, "git", hash)
+		if err != nil {
+			return fmt.Errorf("create revision %s: %w", hash, err)
+		}
+		var prevHash string
+		if i > 0 {
+			prevHash = hashes[i-1]
+		}
+		for _, relPath := range changedFiles(root, hash, prevHash) {
+			if parser.Detect(relPath) == "" {
+				continue
+			}
+			content, showErr := exec.Command("git", "-C", root, "show", hash+":"+relPath).Output()
+			if showErr != nil {
+				continue
+			}
+			result, parseErr := p.ParseContent(relPath, content)
+			if parseErr != nil {
+				continue
+			}
+			norm := filepath.ToSlash(relPath)
+			for j := range result.Nodes {
+				result.Nodes[j].FilePath = norm
+			}
+			b.UpsertFile(rootID, revID, "", result)
+			totalFiles++
+		}
+		fmt.Fprintf(cfg.stdout, "  [%s %d/%d] %s\n", resolved.Name, i+1, len(hashes), hash[:12])
+	}
+	s.SetRootIndexed(rootID, hashes[len(hashes)-1])
+	fmt.Fprintf(cfg.stdout, "  [%s] %d commits, %d file-versions\n", resolved.Name, len(hashes), totalFiles)
 	return nil
 }
 
