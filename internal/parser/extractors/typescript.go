@@ -98,16 +98,21 @@ func (e *TypeScriptExtractor) Extract(filePath string, source []byte) (*parser.R
 	}
 
 	// import edges
-	// Relative imports (starting with ".") are resolved to a project-root-relative
-	// path so the builder can match against file nodes (e.g. "src/utils" -> "src/utils.ts").
-	// External package imports use only the last path segment.
+	// Resolution priority:
+	//   1. Relative path ("./foo", "../bar") -> resolved against filePath
+	//   2. "@/" alias (Vue/Vite convention) -> resolved as "src/<rest>"
+	//   3. External package -> last path segment only
 	for _, cap := range queryAll(lang, root, source,
 		`(import_statement source: (string) @src)`, "src") {
 		raw := strings.Trim(cap.text, `"'`)
 		var sym string
-		if strings.HasPrefix(raw, ".") {
+		switch {
+		case strings.HasPrefix(raw, "."):
 			sym = path.Clean(path.Join(path.Dir(filePath), raw))
-		} else {
+		case strings.HasPrefix(raw, "@/"):
+			// "@/" is the standard Vite/Vue CLI alias for the "src/" directory
+			sym = "src/" + raw[2:]
+		default:
 			parts := strings.Split(raw, "/")
 			sym = parts[len(parts)-1]
 		}
