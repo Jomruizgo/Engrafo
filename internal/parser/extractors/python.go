@@ -1,4 +1,4 @@
-﻿//go:build cgo
+//go:build cgo
 
 package extractors
 
@@ -80,7 +80,7 @@ func (e *PythonExtractor) Extract(filePath string, source []byte) (*parser.Resul
 		})
 	}
 
-	// import edges: import os, import sys
+	// file-level import edges: "import os" -> file -[imports]-> os
 	for _, cap := range queryAll(lang, root, source,
 		`(import_statement name: (dotted_name) @mod)`, "mod") {
 		parts := strings.Split(cap.text, ".")
@@ -91,7 +91,7 @@ func (e *PythonExtractor) Extract(filePath string, source []byte) (*parser.Resul
 		})
 	}
 
-	// from X import Y â†’ edge to X
+	// file-level import edges: "from X import ..." -> file -[imports]-> X
 	for _, cap := range queryAll(lang, root, source,
 		`(import_from_statement module_name: (dotted_name) @mod)`, "mod") {
 		parts := strings.Split(cap.text, ".")
@@ -99,6 +99,21 @@ func (e *PythonExtractor) Extract(filePath string, source []byte) (*parser.Resul
 			FromSymbol: filePath,
 			ToSymbol:   parts[0],
 			Kind:       "imports",
+		})
+	}
+
+	// symbol-level uses edges: "from X import AuthService, UserError" emits:
+	//   filePath -[uses]-> AuthService
+	//   filePath -[uses]-> UserError
+	// Handles both absolute ("from services import X") and relative ("from . import X").
+	// The builder resolves each name against existing non-external nodes in the
+	// same root; matches give accurate used_by data for cg_impact.
+	for _, cap := range queryAll(lang, root, source,
+		`(import_from_statement name: (dotted_name) @name)`, "name") {
+		edges = append(edges, parser.Edge{
+			FromSymbol: filePath,
+			ToSymbol:   cap.text,
+			Kind:       "uses",
 		})
 	}
 

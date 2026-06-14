@@ -97,11 +97,11 @@ func (e *TypeScriptExtractor) Extract(filePath string, source []byte) (*parser.R
 		})
 	}
 
-	// import edges
-	// Resolution priority:
-	//   1. Relative path ("./foo", "../bar") -> resolved against filePath
-	//   2. "@/" alias (Vue/Vite convention) -> resolved as "src/<rest>"
-	//   3. External package -> last path segment only
+	// file-level import edges (module dependency)
+	// Resolution:
+	//   "./foo" or "../foo" -> resolved against filePath (project-root-relative)
+	//   "@/foo"             -> "src/foo" (standard Vue/Vite alias)
+	//   "pkg"               -> last path segment (treated as external)
 	for _, cap := range queryAll(lang, root, source,
 		`(import_statement source: (string) @src)`, "src") {
 		raw := strings.Trim(cap.text, `"'`)
@@ -110,7 +110,6 @@ func (e *TypeScriptExtractor) Extract(filePath string, source []byte) (*parser.R
 		case strings.HasPrefix(raw, "."):
 			sym = path.Clean(path.Join(path.Dir(filePath), raw))
 		case strings.HasPrefix(raw, "@/"):
-			// "@/" is the standard Vite/Vue CLI alias for the "src/" directory
 			sym = "src/" + raw[2:]
 		default:
 			parts := strings.Split(raw, "/")
@@ -120,6 +119,22 @@ func (e *TypeScriptExtractor) Extract(filePath string, source []byte) (*parser.R
 			FromSymbol: filePath,
 			ToSymbol:   sym,
 			Kind:       "imports",
+		})
+	}
+
+	// symbol-level uses edges from named import specifiers
+	// "import { Actor, Question } from './actor'" emits:
+	//   filePath -[uses]-> Actor
+	//   filePath -[uses]-> Question
+	// The builder resolves each name against existing non-external nodes in
+	// the same root; matches give accurate used_by data for cg_impact.
+	for _, cap := range queryAll(lang, root, source,
+		`(import_statement (import_clause (named_imports (import_specifier name: (identifier) @name))))`,
+		"name") {
+		edges = append(edges, parser.Edge{
+			FromSymbol: filePath,
+			ToSymbol:   cap.text,
+			Kind:       "uses",
 		})
 	}
 
