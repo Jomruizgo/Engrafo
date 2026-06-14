@@ -11,7 +11,6 @@ import (
 )
 
 // Tool names exposed by the MCP server.
-// 7 tools in v1.0 + cg_deadcode (v1.1) + cg_history (v1.1).
 const (
 	ToolCGContext      = "cg_context"
 	ToolCGNode         = "cg_node"
@@ -56,21 +55,27 @@ func errResult(msg string) *mcplib.CallToolResult {
 	return r
 }
 
-// CGContext implements cg_context: returns project-level summary.
+// CGContext implements cg_context: returns project-level summary including per-root breakdown.
 func (h *Handlers) CGContext(_ context.Context, _ mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	ctx, err := h.querier.Context()
 	if err != nil {
 		return errResult(err.Error()), nil
+	}
+	roots := ctx.Roots
+	if roots == nil {
+		roots = []graph.RootContext{}
 	}
 	return jsonResult(map[string]any{
 		"languages": ctx.Languages,
 		"stats":     ctx.NodeCounts,
 		"top_nodes": ctx.TopNodes,
 		"total":     ctx.TotalNodes,
+		"roots":     roots,
 	})
 }
 
 // CGNode implements cg_node: returns full details for a single symbol.
+// Optional param: root (string) — restrict to that root.
 func (h *Handlers) CGNode(_ context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	args := req.GetArguments()
 	symbol, _ := args["symbol"].(string)
@@ -79,25 +84,28 @@ func (h *Handlers) CGNode(_ context.Context, req mcplib.CallToolRequest) (*mcpli
 	}
 	kind, _ := args["kind"].(string)
 	includeInvalidated, _ := args["include_invalidated"].(bool)
+	rootName, _ := args["root"].(string)
 
-	info, err := h.querier.NodeInfo(symbol, kind, includeInvalidated)
+	info, err := h.querier.NodeInfo(symbol, kind, includeInvalidated, rootName)
 	if err != nil {
 		return errResult(err.Error()), nil
 	}
 	return jsonResult(map[string]any{
-		"node":                    info.Node,
-		"depends_on":              info.DependsOn,
-		"used_by":                 info.UsedBy,
-		"anchored_observations":   info.AnchoredObsIDs,
-		"historical_edges":        info.HistoricalEdges,
+		"node":                  info.Node,
+		"depends_on":            info.DependsOn,
+		"used_by":               info.UsedBy,
+		"anchored_observations": info.AnchoredObsIDs,
+		"historical_edges":      info.HistoricalEdges,
 	})
 }
 
 // CGDependents implements cg_dependents: nodes that depend on a file or symbol.
+// Optional param: root (string).
 func (h *Handlers) CGDependents(_ context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	args := req.GetArguments()
 	filePath, _ := args["file_path"].(string)
 	symbol, _ := args["symbol"].(string)
+	rootName, _ := args["root"].(string)
 
 	target := filePath
 	if target == "" {
@@ -107,7 +115,7 @@ func (h *Handlers) CGDependents(_ context.Context, req mcplib.CallToolRequest) (
 		return errResult("file_path or symbol is required"), nil
 	}
 
-	deps, err := h.querier.Dependents(target)
+	deps, err := h.querier.Dependents(target, rootName)
 	if err != nil {
 		return errResult(err.Error()), nil
 	}
@@ -115,10 +123,12 @@ func (h *Handlers) CGDependents(_ context.Context, req mcplib.CallToolRequest) (
 }
 
 // CGDependencies implements cg_dependencies: what a file or symbol depends on.
+// Optional param: root (string).
 func (h *Handlers) CGDependencies(_ context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	args := req.GetArguments()
 	filePath, _ := args["file_path"].(string)
 	symbol, _ := args["symbol"].(string)
+	rootName, _ := args["root"].(string)
 
 	target := filePath
 	if target == "" {
@@ -128,7 +138,7 @@ func (h *Handlers) CGDependencies(_ context.Context, req mcplib.CallToolRequest)
 		return errResult("file_path or symbol is required"), nil
 	}
 
-	deps, err := h.querier.Dependencies(target)
+	deps, err := h.querier.Dependencies(target, rootName)
 	if err != nil {
 		return errResult(err.Error()), nil
 	}
@@ -136,6 +146,7 @@ func (h *Handlers) CGDependencies(_ context.Context, req mcplib.CallToolRequest)
 }
 
 // CGImpact implements cg_impact: transitive blast radius of modifying a file.
+// Optional param: root (string).
 func (h *Handlers) CGImpact(_ context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	args := req.GetArguments()
 	filePath, _ := args["file_path"].(string)
@@ -146,8 +157,9 @@ func (h *Handlers) CGImpact(_ context.Context, req mcplib.CallToolRequest) (*mcp
 	if d, ok := args["depth"].(float64); ok && d > 0 {
 		depth = int(d)
 	}
+	rootName, _ := args["root"].(string)
 
-	affected, err := h.querier.Impact(filePath, depth)
+	affected, err := h.querier.Impact(filePath, depth, rootName)
 	if err != nil {
 		return errResult(err.Error()), nil
 	}
@@ -158,6 +170,7 @@ func (h *Handlers) CGImpact(_ context.Context, req mcplib.CallToolRequest) (*mcp
 }
 
 // CGSearch implements cg_search: FTS5 symbol search.
+// Optional param: root (string).
 func (h *Handlers) CGSearch(_ context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	args := req.GetArguments()
 	query, _ := args["query"].(string)
@@ -168,8 +181,9 @@ func (h *Handlers) CGSearch(_ context.Context, req mcplib.CallToolRequest) (*mcp
 	if l, ok := args["limit"].(float64); ok && l > 0 {
 		limit = int(l)
 	}
+	rootName, _ := args["root"].(string)
 
-	results, err := h.querier.Search(query, limit)
+	results, err := h.querier.Search(query, limit, rootName)
 	if err != nil {
 		return errResult(err.Error()), nil
 	}
@@ -177,6 +191,7 @@ func (h *Handlers) CGSearch(_ context.Context, req mcplib.CallToolRequest) (*mcp
 }
 
 // CGAnchor implements cg_anchor: links an engram observation to graph nodes.
+// Optional param: root (string).
 func (h *Handlers) CGAnchor(_ context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	args := req.GetArguments()
 	obsID, _ := args["engram_obs_id"].(string)
@@ -192,8 +207,9 @@ func (h *Handlers) CGAnchor(_ context.Context, req mcplib.CallToolRequest) (*mcp
 			}
 		}
 	}
+	rootName, _ := args["root"].(string)
 
-	count, err := h.store.AnchorObservations(obsID, symbols)
+	count, err := h.store.AnchorObservations(obsID, symbols, rootName)
 	if err != nil {
 		return errResult(err.Error()), nil
 	}
@@ -202,12 +218,14 @@ func (h *Handlers) CGAnchor(_ context.Context, req mcplib.CallToolRequest) (*mcp
 
 // CGDeadcode implements the cg_deadcode MCP tool (v1.1).
 // Returns orphan nodes (never referenced) and abandoned nodes (once referenced, now not).
+// Optional param: root (string) — filter by root.
 func (h *Handlers) CGDeadcode(_ context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	args := req.GetArguments()
 	thresholdDays := 0
 	if v, ok := args["threshold_days"].(float64); ok {
 		thresholdDays = int(v)
 	}
+	rootName, _ := args["root"].(string)
 
 	result, err := h.querier.Deadcode(thresholdDays)
 	if err != nil {
@@ -216,16 +234,23 @@ func (h *Handlers) CGDeadcode(_ context.Context, req mcplib.CallToolRequest) (*m
 
 	orphans := make([]map[string]any, 0, len(result.Orphans))
 	for _, o := range result.Orphans {
+		if rootName != "" && o.Root != rootName {
+			continue
+		}
 		orphans = append(orphans, map[string]any{
 			"symbol":    o.Symbol,
 			"kind":      o.Kind,
 			"file_path": o.FilePath,
 			"language":  o.Language,
+			"root":      o.Root,
 		})
 	}
 
 	abandoned := make([]map[string]any, 0, len(result.Abandoned))
 	for _, a := range result.Abandoned {
+		if rootName != "" && a.Root != rootName {
+			continue
+		}
 		abandoned = append(abandoned, map[string]any{
 			"symbol":               a.Symbol,
 			"kind":                 a.Kind,
@@ -233,6 +258,7 @@ func (h *Handlers) CGDeadcode(_ context.Context, req mcplib.CallToolRequest) (*m
 			"language":             a.Language,
 			"peak_incoming_edges":  a.PeakIncomingEdges,
 			"days_since_abandoned": a.DaysSinceAbandoned,
+			"root":                 a.Root,
 		})
 	}
 
@@ -243,7 +269,8 @@ func (h *Handlers) CGDeadcode(_ context.Context, req mcplib.CallToolRequest) (*m
 }
 
 // CGHistory implements the cg_history MCP tool (v1.1).
-// Returns the chronological edge timeline for a node: when dependencies appeared and disappeared.
+// Returns the chronological edge timeline for a node.
+// Optional param: root (string).
 func (h *Handlers) CGHistory(_ context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	args := req.GetArguments()
 	symbol, _ := args["symbol"].(string)
@@ -251,8 +278,9 @@ func (h *Handlers) CGHistory(_ context.Context, req mcplib.CallToolRequest) (*mc
 		return errResult("symbol is required"), nil
 	}
 	kind, _ := args["kind"].(string)
+	rootName, _ := args["root"].(string)
 
-	result, err := h.querier.History(symbol, kind)
+	result, err := h.querier.History(symbol, kind, rootName)
 	if err != nil {
 		return errResult(fmt.Sprintf("history: %v", err)), nil
 	}

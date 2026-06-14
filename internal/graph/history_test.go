@@ -22,10 +22,30 @@ func seedHistoryGraph(t *testing.T) *graph.Store {
 	}
 	t.Cleanup(func() { s.Close() })
 
+	rootID, err := s.UpsertRoot(graph.ResolvedRoot{
+		Name: "test", RelPath: ".", AbsRoot: dir, VCS: "git",
+	})
+	if err != nil {
+		t.Fatalf("UpsertRoot: %v", err)
+	}
+
+	revA, err := s.CreateRevision(rootID, "git", "commit-A")
+	if err != nil {
+		t.Fatalf("CreateRevision commit-A: %v", err)
+	}
+	revB, err := s.CreateRevision(rootID, "git", "commit-B")
+	if err != nil {
+		t.Fatalf("CreateRevision commit-B: %v", err)
+	}
+	revC, err := s.CreateRevision(rootID, "git", "commit-C")
+	if err != nil {
+		t.Fatalf("CreateRevision commit-C: %v", err)
+	}
+
 	b := graph.NewBuilder(s)
 
 	// commit-A
-	b.UpsertFile("commit-A", &parser.Result{
+	b.UpsertFile(rootID, revA, "", &parser.Result{
 		Nodes: []parser.Node{
 			{Symbol: "caller", Kind: "function", FilePath: "a.go", Language: "go"},
 			{Symbol: "dep1", Kind: "function", FilePath: "b.go", Language: "go"},
@@ -38,7 +58,7 @@ func seedHistoryGraph(t *testing.T) *graph.Store {
 	})
 
 	// commit-B: dep2 dropped
-	b.UpsertFile("commit-B", &parser.Result{
+	b.UpsertFile(rootID, revB, "", &parser.Result{
 		Nodes: []parser.Node{
 			{Symbol: "caller", Kind: "function", FilePath: "a.go", Language: "go"},
 			{Symbol: "dep1", Kind: "function", FilePath: "b.go", Language: "go"},
@@ -49,7 +69,7 @@ func seedHistoryGraph(t *testing.T) *graph.Store {
 	})
 
 	// commit-C: dep3 added
-	b.UpsertFile("commit-C", &parser.Result{
+	b.UpsertFile(rootID, revC, "", &parser.Result{
 		Nodes: []parser.Node{
 			{Symbol: "caller", Kind: "function", FilePath: "a.go", Language: "go"},
 			{Symbol: "dep1", Kind: "function", FilePath: "b.go", Language: "go"},
@@ -65,17 +85,13 @@ func seedHistoryGraph(t *testing.T) *graph.Store {
 }
 
 func TestHistoryReturnsNodeIdentity(t *testing.T) {
-	// Arrange
 	s := seedHistoryGraph(t)
 	q := graph.NewQuerier(s)
 
-	// Act
-	result, err := q.History("caller", "function")
+	result, err := q.History("caller", "function", "")
 	if err != nil {
 		t.Fatalf("History: %v", err)
 	}
-
-	// Assert
 	if result.Symbol != "caller" {
 		t.Errorf("want symbol=caller, got %q", result.Symbol)
 	}
@@ -85,17 +101,14 @@ func TestHistoryReturnsNodeIdentity(t *testing.T) {
 }
 
 func TestHistoryTimelineContainsAppearAndDisappear(t *testing.T) {
-	// Arrange
 	s := seedHistoryGraph(t)
 	q := graph.NewQuerier(s)
 
-	// Act
-	result, err := q.History("caller", "function")
+	result, err := q.History("caller", "function", "")
 	if err != nil {
 		t.Fatalf("History: %v", err)
 	}
 
-	// Assert: timeline must contain at least one "appeared" and one "disappeared"
 	appeared, disappeared := 0, 0
 	for _, ev := range result.Timeline {
 		switch ev.EventType {
@@ -114,17 +127,14 @@ func TestHistoryTimelineContainsAppearAndDisappear(t *testing.T) {
 }
 
 func TestHistoryDep2Disappeared(t *testing.T) {
-	// Arrange
 	s := seedHistoryGraph(t)
 	q := graph.NewQuerier(s)
 
-	// Act
-	result, err := q.History("caller", "function")
+	result, err := q.History("caller", "function", "")
 	if err != nil {
 		t.Fatalf("History: %v", err)
 	}
 
-	// Assert: dep2 must appear as a "disappeared" event at commit-B
 	found := false
 	for _, ev := range result.Timeline {
 		if ev.TargetSymbol == "dep2" && ev.EventType == "disappeared" {
@@ -140,17 +150,14 @@ func TestHistoryDep2Disappeared(t *testing.T) {
 }
 
 func TestHistoryDep3Appeared(t *testing.T) {
-	// Arrange
 	s := seedHistoryGraph(t)
 	q := graph.NewQuerier(s)
 
-	// Act
-	result, err := q.History("caller", "function")
+	result, err := q.History("caller", "function", "")
 	if err != nil {
 		t.Fatalf("History: %v", err)
 	}
 
-	// Assert: dep3 appeared at commit-C
 	found := false
 	for _, ev := range result.Timeline {
 		if ev.TargetSymbol == "dep3" && ev.EventType == "appeared" {
@@ -166,12 +173,10 @@ func TestHistoryDep3Appeared(t *testing.T) {
 }
 
 func TestHistoryUnknownSymbolReturnsError(t *testing.T) {
-	// Arrange
 	s := seedHistoryGraph(t)
 	q := graph.NewQuerier(s)
 
-	// Act / Assert
-	_, err := q.History("nonexistent", "")
+	_, err := q.History("nonexistent", "", "")
 	if err == nil {
 		t.Error("want error for unknown symbol, got nil")
 	}

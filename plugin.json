@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "name": "engrafo",
   "display_name": "Engrafo — Code Graph",
-  "version": "1.6.0",
+  "version": "2.0.0",
   "description": "Structural code graph for coding agents. Bi-temporal dependency analysis, symbol search, dead code detection, and change history — without re-reading source files.",
   "author": "jomruizgo",
   "license": "MIT",
@@ -59,6 +59,18 @@
   ],
 
   "cli": {
+    "workspace_add": {
+      "command": "engrafo workspace add <name> <path> [--remote URL] [--branch B] [--vcs git|none]",
+      "description": "Register a root in the workspace (creates engrafo.json if absent) and index it immediately."
+    },
+    "workspace_list": {
+      "command": "engrafo workspace list",
+      "description": "List registered roots with path, VCS, remote, node count, and last indexed date."
+    },
+    "workspace_remove": {
+      "command": "engrafo workspace remove <name>",
+      "description": "Remove a root from the manifest and delete its nodes/edges from the database (cascading)."
+    },
     "init": {
       "command": "engrafo init [root]",
       "description": "Index the repository from the current working tree. Creates .engrafo/graph.db."
@@ -68,8 +80,8 @@
       "description": "Replay the last N git commits to build bi-temporal history. More accurate for dead-code detection."
     },
     "update": {
-      "command": "engrafo update",
-      "description": "Incremental update: re-index only files changed since the last indexed commit."
+      "command": "engrafo update [--root <name>]",
+      "description": "Incremental update. Without --root: all roots. With --root: only that root. Detects changes by git diff (vcs=git) or checksum (vcs=none)."
     },
     "serve": {
       "command": "engrafo serve",

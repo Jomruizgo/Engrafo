@@ -21,16 +21,32 @@ func openTestStore(t *testing.T) *graph.Store {
 	return s
 }
 
+func seedRoot(t *testing.T, s *graph.Store) (int64, int64) {
+	t.Helper()
+	rootID, err := s.UpsertRoot(graph.ResolvedRoot{
+		Name: "test", RelPath: ".", AbsRoot: t.TempDir(), VCS: "none",
+	})
+	if err != nil {
+		t.Fatalf("UpsertRoot: %v", err)
+	}
+	revID, err := s.CreateRevision(rootID, "git", "commit-abc")
+	if err != nil {
+		t.Fatalf("CreateRevision: %v", err)
+	}
+	return rootID, revID
+}
+
 func seedGraph(t *testing.T, s *graph.Store) {
 	t.Helper()
+	rootID, revID := seedRoot(t, s)
 	b := graph.NewBuilder(s)
-	b.UpsertFile("commit-abc", &parser.Result{
+	b.UpsertFile(rootID, revID, "", &parser.Result{
 		Nodes: []parser.Node{
 			{Symbol: "user", Kind: "package", FilePath: "user.go", Language: "go"},
 			{Symbol: "UserService", Kind: "class", FilePath: "user.go", Language: "go"},
 		},
 	})
-	b.UpsertFile("commit-abc", &parser.Result{
+	b.UpsertFile(rootID, revID, "", &parser.Result{
 		Nodes: []parser.Node{
 			{Symbol: "server", Kind: "package", FilePath: "server.go", Language: "go"},
 		},
@@ -41,15 +57,12 @@ func seedGraph(t *testing.T, s *graph.Store) {
 }
 
 func TestSessionStartMessageContainsEngrafoPrefix(t *testing.T) {
-	// Arrange
 	s := openTestStore(t)
 	seedGraph(t, s)
 	q := graph.NewQuerier(s)
 
-	// Act
 	msg := hooks.SessionStartMessage(q)
 
-	// Assert
 	if msg == "" {
 		t.Error("want non-empty session start message")
 	}
@@ -59,15 +72,12 @@ func TestSessionStartMessageContainsEngrafoPrefix(t *testing.T) {
 }
 
 func TestPreReadMessageWithDependents(t *testing.T) {
-	// Arrange: user.go has server.go as dependent
 	s := openTestStore(t)
 	seedGraph(t, s)
 	q := graph.NewQuerier(s)
 
-	// Act
-	msg := hooks.PreReadMessage(q, "user.go")
+	msg := hooks.PreReadMessage(q, "user.go", "")
 
-	// Assert
 	if msg == "" {
 		t.Error("want non-empty pre-read message for file with dependents")
 	}
@@ -77,35 +87,30 @@ func TestPreReadMessageWithDependents(t *testing.T) {
 }
 
 func TestPreReadMessageNoDependents(t *testing.T) {
-	// Arrange: isolated file with no dependents
 	s := openTestStore(t)
+	rootID, revID := seedRoot(t, s)
 	b := graph.NewBuilder(s)
-	b.UpsertFile("commit-abc", &parser.Result{
+	b.UpsertFile(rootID, revID, "", &parser.Result{
 		Nodes: []parser.Node{
 			{Symbol: "isolated", Kind: "package", FilePath: "isolated.go", Language: "go"},
 		},
 	})
 	q := graph.NewQuerier(s)
 
-	// Act
-	msg := hooks.PreReadMessage(q, "isolated.go")
+	msg := hooks.PreReadMessage(q, "isolated.go", "")
 
-	// Assert: no dependents → no injection
 	if msg != "" {
 		t.Errorf("want empty message for file with no dependents, got %q", msg)
 	}
 }
 
 func TestPreWriteMessageAlwaysReturnsMessage(t *testing.T) {
-	// Arrange
 	s := openTestStore(t)
 	seedGraph(t, s)
 	q := graph.NewQuerier(s)
 
-	// Act
-	msg := hooks.PreWriteMessage(q, "user.go", 3)
+	msg := hooks.PreWriteMessage(q, "user.go", 3, "")
 
-	// Assert: always returns a message (may be warning or informative)
 	if msg == "" {
 		t.Error("want non-empty pre-write message")
 	}
@@ -115,13 +120,10 @@ func TestPreWriteMessageAlwaysReturnsMessage(t *testing.T) {
 }
 
 func TestHookOutputJSON(t *testing.T) {
-	// Arrange
 	expected := "test message"
 
-	// Act
 	out := hooks.BuildOutput(expected)
 
-	// Assert: result is valid JSON with systemMessage key
 	var m map[string]any
 	if err := json.Unmarshal([]byte(out), &m); err != nil {
 		t.Fatalf("BuildOutput is not valid JSON: %v\ngot: %s", err, out)
@@ -132,7 +134,6 @@ func TestHookOutputJSON(t *testing.T) {
 }
 
 func TestHookOutputEmptyMessage(t *testing.T) {
-	// Empty message → still valid JSON, no systemMessage key
 	out := hooks.BuildOutput("")
 	var m map[string]any
 	if err := json.Unmarshal([]byte(out), &m); err != nil {

@@ -24,7 +24,7 @@ func cmdQuery(cfg *config, args []string) error {
 	defer s.Close()
 
 	q := graph.NewQuerier(s)
-	result, err := q.NodeInfo(symbol, "", false)
+	result, err := q.NodeInfo(symbol, "", false, "")
 	if err != nil {
 		return fmt.Errorf("query %q: %w", symbol, err)
 	}

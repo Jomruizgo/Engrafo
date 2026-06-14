@@ -71,6 +71,29 @@ func initFull(cfg *config, root, dbPath string) error {
 	defer s.Close()
 
 	commitHash := currentHEAD(root)
+	vcs := detectVCS(root)
+
+	rootID, err := s.UpsertRoot(graph.ResolvedRoot{
+		Name:    filepath.Base(root),
+		RelPath: ".",
+		AbsRoot: root,
+		VCS:     vcs,
+	})
+	if err != nil {
+		return fmt.Errorf("upsert root: %w", err)
+	}
+
+	revSource := "git"
+	revHash := commitHash
+	if commitHash == "init" || commitHash == "" {
+		revSource = "init"
+		revHash = ""
+	}
+	revID, err := s.CreateRevision(rootID, revSource, revHash)
+	if err != nil {
+		return fmt.Errorf("create revision: %w", err)
+	}
+
 	p := newParser()
 	b := graph.NewBuilder(s)
 
@@ -103,7 +126,7 @@ func initFull(cfg *config, root, dbPath string) error {
 			result.Nodes[i].FilePath = rel
 		}
 
-		if upsertErr := b.UpsertFile(commitHash, result); upsertErr != nil {
+		if upsertErr := b.UpsertFile(rootID, revID, "", result); upsertErr != nil {
 			return fmt.Errorf("upsert %s: %w", rel, upsertErr)
 		}
 		indexed++
@@ -117,6 +140,7 @@ func initFull(cfg *config, root, dbPath string) error {
 	db.Exec(`INSERT OR REPLACE INTO index_meta(key,value) VALUES('last_commit_hash',?)`, commitHash)
 	db.Exec(`INSERT OR REPLACE INTO index_meta(key,value) VALUES('repo_root',?)`, root)
 	db.Exec(`INSERT OR REPLACE INTO index_meta(key,value) VALUES('indexed_at',datetime('now'))`)
+	s.SetRootIndexed(rootID, commitHash)
 
 	fmt.Fprintf(cfg.stdout, "indexed %d files (%d skipped) — db: %s\n", indexed, skipped, dbPath)
 	return nil
@@ -152,11 +176,26 @@ func initFromGit(cfg *config, root, dbPath string, n int) error {
 	}
 	defer s.Close()
 
+	rootID, err := s.UpsertRoot(graph.ResolvedRoot{
+		Name:    filepath.Base(root),
+		RelPath: ".",
+		AbsRoot: root,
+		VCS:     "git",
+	})
+	if err != nil {
+		return fmt.Errorf("upsert root: %w", err)
+	}
+
 	p := newParser()
 	b := graph.NewBuilder(s)
 
 	var totalFiles int
 	for i, hash := range hashes {
+		revID, err := s.CreateRevision(rootID, "git", hash)
+		if err != nil {
+			return fmt.Errorf("create revision for %s: %w", hash, err)
+		}
+
 		var prevHash string
 		if i > 0 {
 			prevHash = hashes[i-1]
@@ -184,7 +223,7 @@ func initFromGit(cfg *config, root, dbPath string, n int) error {
 				result.Nodes[j].FilePath = norm
 			}
 
-			b.UpsertFile(hash, result)
+			b.UpsertFile(rootID, revID, "", result)
 			totalFiles++
 		}
 
@@ -196,6 +235,7 @@ func initFromGit(cfg *config, root, dbPath string, n int) error {
 	db.Exec(`INSERT OR REPLACE INTO index_meta(key,value) VALUES('last_commit_hash',?)`, headHash)
 	db.Exec(`INSERT OR REPLACE INTO index_meta(key,value) VALUES('repo_root',?)`, root)
 	db.Exec(`INSERT OR REPLACE INTO index_meta(key,value) VALUES('indexed_at',datetime('now'))`)
+	s.SetRootIndexed(rootID, headHash)
 
 	fmt.Fprintf(cfg.stdout, "replayed %d commits, %d file-versions — db: %s\n",
 		len(hashes), totalFiles, dbPath)
@@ -222,4 +262,84 @@ func currentHEAD(repoRoot string) string {
 		return "init"
 	}
 	return strings.TrimSpace(string(out))
+}
+
+func detectVCS(root string) string {
+	if _, err := os.Stat(filepath.Join(root, ".git")); err == nil {
+		return "git"
+	}
+	return "none"
+}
+
+// initRoot indexa una sola raíz resuelta: UpsertRoot, revisión inicial, walk + parse + upsert.
+// Compartida por workspace add e initFull.
+func initRoot(cfg *config, s *graph.Store, resolved graph.ResolvedRoot) error {
+	rootID, err := s.UpsertRoot(resolved)
+	if err != nil {
+		return fmt.Errorf("upsert root: %w", err)
+	}
+
+	commitHash := currentHEAD(resolved.AbsRoot)
+	if resolved.VCS != "git" {
+		commitHash = ""
+	}
+
+	revSource := "git"
+	revHash := commitHash
+	if commitHash == "" {
+		revSource = "init"
+	}
+	revID, err := s.CreateRevision(rootID, revSource, revHash)
+	if err != nil {
+		return fmt.Errorf("create revision: %w", err)
+	}
+
+	p := newParser()
+	b := graph.NewBuilder(s)
+
+	var indexed int
+	_ = filepath.WalkDir(resolved.AbsRoot, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if skipDirs[d.Name()] {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if parser.Detect(path) == "" {
+			return nil
+		}
+		content, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return nil
+		}
+		rel, _ := filepath.Rel(resolved.AbsRoot, path)
+		rel = filepath.ToSlash(rel)
+
+		result, parseErr := p.ParseContent(rel, content)
+		if parseErr != nil {
+			return nil
+		}
+		for i := range result.Nodes {
+			result.Nodes[i].FilePath = rel
+		}
+		cs := ""
+		if resolved.VCS == "none" {
+			cs = sha256hex(content)
+		}
+		if upsertErr := b.UpsertFile(rootID, revID, cs, result); upsertErr != nil {
+			return nil
+		}
+		indexed++
+		return nil
+	})
+
+	s.SetRootIndexed(rootID, commitHash)
+
+	if cfg != nil {
+		fmt.Fprintf(cfg.stdout, "  [%s] %d archivos indexados\n", resolved.Name, indexed)
+	}
+	return nil
 }

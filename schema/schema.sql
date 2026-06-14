@@ -1,50 +1,72 @@
--- schema version for migrations
+-- Schema v2: multi-repo + bi-temporal revisions
+-- Para bases nuevas. Migraciones desde v1 las hace store.migrateV1ToV2().
+
 CREATE TABLE IF NOT EXISTS schema_version (
-    version     INTEGER PRIMARY KEY,
-    applied_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    version    INTEGER PRIMARY KEY,
+    applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- nodes: any identifiable symbol
+-- Raíces indexadas (una por repo en modo multi-repo; exactamente una en modo single-repo)
+CREATE TABLE IF NOT EXISTS roots (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    name             TEXT NOT NULL UNIQUE,
+    rel_path         TEXT NOT NULL,
+    abs_root         TEXT NOT NULL,
+    remote_url       TEXT,
+    default_branch   TEXT,
+    vcs              TEXT NOT NULL DEFAULT 'git',
+    last_commit_hash TEXT,
+    indexed_at       DATETIME
+);
+
+-- Revisiones: coordenada temporal del modelo bi-temporal
+CREATE TABLE IF NOT EXISTS revisions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    root_id     INTEGER NOT NULL REFERENCES roots(id) ON DELETE CASCADE,
+    source      TEXT NOT NULL,       -- 'git' | 'checksum' | 'init'
+    commit_hash TEXT,                -- NULL salvo source='git'
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_revisions_root ON revisions(root_id);
+
+-- Nodos: símbolos identificables (con scope de raíz)
 CREATE TABLE IF NOT EXISTS nodes (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    root_id     INTEGER NOT NULL REFERENCES roots(id) ON DELETE CASCADE,
     symbol      TEXT NOT NULL,
-    kind        TEXT NOT NULL,      -- "function"|"method"|"class"|"interface"|"file"|"package"
-    file_path   TEXT NOT NULL,      -- relative to repo root
+    kind        TEXT NOT NULL,
+    file_path   TEXT NOT NULL,
     line_start  INTEGER,
     line_end    INTEGER,
     signature   TEXT,
-    language    TEXT NOT NULL,      -- "go"|"typescript"|"python"
+    language    TEXT NOT NULL,
     checksum    TEXT,
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 );
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_nodes_symbol_file
-    ON nodes(symbol, file_path, kind);
-
+CREATE UNIQUE INDEX IF NOT EXISTS idx_nodes_root_symbol_file
+    ON nodes(root_id, symbol, file_path, kind);
 CREATE INDEX IF NOT EXISTS idx_nodes_file   ON nodes(file_path);
 CREATE INDEX IF NOT EXISTS idx_nodes_symbol ON nodes(symbol);
+CREATE INDEX IF NOT EXISTS idx_nodes_root   ON nodes(root_id);
 
--- edges: bi-temporal — never deleted, only invalidated
+-- Aristas: bi-temporal — nunca se borran, solo se invalidan
 CREATE TABLE IF NOT EXISTS edges (
-    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    from_id             INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-    to_id               INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-    kind                TEXT NOT NULL,          -- "calls"|"imports"|"inherits"|"implements"|"uses"
-    valid_from_commit   TEXT NOT NULL,
-    valid_until_commit  TEXT,                   -- NULL = active
-    invalidated_reason  TEXT,
-    created_at          DATETIME DEFAULT CURRENT_TIMESTAMP
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_id            INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    to_id              INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    kind               TEXT NOT NULL,
+    valid_from_rev     INTEGER NOT NULL REFERENCES revisions(id),
+    valid_until_rev    INTEGER REFERENCES revisions(id),   -- NULL = activa
+    invalidated_reason TEXT,
+    created_at         DATETIME DEFAULT CURRENT_TIMESTAMP
 );
-
--- uniqueness only among ACTIVE edges
 CREATE UNIQUE INDEX IF NOT EXISTS idx_edges_unique_active
-    ON edges(from_id, to_id, kind) WHERE valid_until_commit IS NULL;
-
+    ON edges(from_id, to_id, kind) WHERE valid_until_rev IS NULL;
 CREATE INDEX IF NOT EXISTS idx_edges_from ON edges(from_id);
 CREATE INDEX IF NOT EXISTS idx_edges_to   ON edges(to_id);
 
--- FTS for symbol search
+-- FTS para búsqueda de símbolos
 CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
     symbol,
     file_path,
@@ -53,7 +75,6 @@ CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
     content_rowid=id
 );
 
--- Triggers to keep nodes_fts in sync with nodes table
 CREATE TRIGGER IF NOT EXISTS nodes_fts_ai AFTER INSERT ON nodes BEGIN
     INSERT INTO nodes_fts(rowid, symbol, file_path, signature)
     VALUES (new.id, new.symbol, new.file_path, new.signature);
@@ -71,20 +92,18 @@ CREATE TRIGGER IF NOT EXISTS nodes_fts_au AFTER UPDATE ON nodes BEGIN
     VALUES (new.id, new.symbol, new.file_path, new.signature);
 END;
 
--- engram anchor table
+-- Anclas de observaciones engram
 CREATE TABLE IF NOT EXISTS engram_anchors (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    node_id         INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-    engram_obs_id   TEXT NOT NULL,
-    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    node_id       INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    engram_obs_id TEXT NOT NULL,
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 );
-
 CREATE INDEX IF NOT EXISTS idx_anchors_node ON engram_anchors(node_id);
 CREATE INDEX IF NOT EXISTS idx_anchors_obs  ON engram_anchors(engram_obs_id);
 
--- index metadata
+-- Metadatos de índice (legacy; repo_root/last_commit_hash migrados a roots en v2)
 CREATE TABLE IF NOT EXISTS index_meta (
-    key     TEXT PRIMARY KEY,
-    value   TEXT
+    key   TEXT PRIMARY KEY,
+    value TEXT
 );
--- keys: "last_commit_hash", "repo_root", "indexed_at"

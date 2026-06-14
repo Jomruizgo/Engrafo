@@ -45,6 +45,12 @@ main { display: flex; flex: 1; overflow: hidden; }
 .orphan-label { color: #f85149; }
 .abandoned-label { color: #f0883e; }
 #loading { padding: 40px; text-align: center; color: #8b949e; }
+#viz-view { display: none; flex: 1; flex-direction: column; overflow: hidden; position: relative; }
+#viz-toolbar { padding: 8px 16px; background: #161b22; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 12px; font-size: 0.8rem; }
+#viz-root-select { padding: 4px 8px; border: 1px solid #30363d; border-radius: 4px; background: #0d1117; color: #e6edf3; font-size: 0.8rem; }
+#viz-hint { color: #8b949e; font-size: 0.75rem; }
+#viz-canvas-wrap { flex: 1; overflow: hidden; position: relative; }
+#viz-canvas { display: block; width: 100%; height: 100%; }
 </style>
 </head>
 <body>
@@ -55,12 +61,23 @@ main { display: flex; flex: 1; overflow: hidden; }
 </header>
 <div class="tabs">
   <div class="tab active" data-tab="graph">Graph</div>
+  <div class="tab" data-tab="viz">Grafo</div>
   <div class="tab" data-tab="deadcode">Dead Code</div>
 </div>
 <main>
   <div id="list"><div id="loading">loading nodes…</div></div>
   <div id="detail"><div class="empty">select a node</div></div>
   <div id="deadcode-view"><div id="loading2">loading…</div></div>
+  <div id="viz-view">
+    <div id="viz-toolbar">
+      <label for="viz-root-select">Raíz:</label>
+      <select id="viz-root-select"><option value="">Todas</option></select>
+      <span id="viz-hint">Drag nodos · Rueda = zoom · Arrastra fondo = pan · Click = detalle</span>
+    </div>
+    <div id="viz-canvas-wrap">
+      <canvas id="viz-canvas"></canvas>
+    </div>
+  </div>
 </main>
 
 <script>
@@ -177,18 +194,275 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     tab.classList.add('active');
     currentTab = tab.dataset.tab;
-    const graphEls = [document.getElementById('list'), document.getElementById('detail')];
-    const dcEl = document.getElementById('deadcode-view');
-    if (currentTab === 'graph') {
-      graphEls.forEach(el => el.style.display = '');
-      dcEl.style.display = 'none';
-    } else {
-      graphEls.forEach(el => el.style.display = 'none');
-      dcEl.style.display = 'block';
-      renderDeadcode();
-    }
+    const listEl  = document.getElementById('list');
+    const detailEl = document.getElementById('detail');
+    const dcEl    = document.getElementById('deadcode-view');
+    const vizEl   = document.getElementById('viz-view');
+    listEl.style.display   = currentTab === 'graph' ? '' : 'none';
+    detailEl.style.display = currentTab === 'graph' ? '' : 'none';
+    dcEl.style.display     = currentTab === 'deadcode' ? 'block' : 'none';
+    vizEl.style.display    = currentTab === 'viz' ? 'flex' : 'none';
+    if (currentTab === 'deadcode') renderDeadcode();
+    if (currentTab === 'viz') vizActivate();
   });
 });
+
+// ── Grafo force-directed ──────────────────────────────────────────────────────
+const viz = (() => {
+  const KIND_COLORS = {
+    function:  '#79c0ff', method: '#56d364', class: '#f0883e',
+    interface: '#d2a8ff', package: '#e3b341', file: '#8b949e', external: '#484f58',
+  };
+  const ROOT_TINTS = ['#58a6ff','#3fb950','#f0883e','#bc8cff','#e3b341','#ff7b72','#79c0ff','#56d364'];
+
+  let nodes = [], edges = [], rootTintMap = {};
+  let simNodes = [], adjMap = {};
+  let scale = 1, panX = 0, panY = 0;
+  let dragNode = null, dragOffX = 0, dragOffY = 0;
+  let isPanning = false, panStartX = 0, panStartY = 0, panStartPanX = 0, panStartPanY = 0;
+  let rafId = null, warmupDone = false;
+  let canvasW = 0, canvasH = 0;
+  let canvas, ctx;
+
+  function colorFor(kind) { return KIND_COLORS[kind] || '#8b949e'; }
+  function tintFor(root)  { return rootTintMap[root] || '#ffffff'; }
+
+  function toScreen(wx, wy) {
+    return [wx * scale + panX, wy * scale + panY];
+  }
+  function toWorld(sx, sy) {
+    return [(sx - panX) / scale, (sy - panY) / scale];
+  }
+
+  function resize() {
+    const wrap = document.getElementById('viz-canvas-wrap');
+    canvasW = wrap.clientWidth  || 800;
+    canvasH = wrap.clientHeight || 600;
+    canvas.width  = canvasW;
+    canvas.height = canvasH;
+  }
+
+  function initPositions() {
+    // Distribuir en círculo para dar semilla al simulador
+    const n = simNodes.length;
+    const R = Math.min(canvasW, canvasH) * 0.35;
+    simNodes.forEach((sn, i) => {
+      const a = (2 * Math.PI * i) / Math.max(n, 1);
+      sn.x  = canvasW / 2 + R * Math.cos(a);
+      sn.y  = canvasH / 2 + R * Math.sin(a);
+      sn.vx = 0; sn.vy = 0;
+      sn.pinned = false;
+    });
+    panX = 0; panY = 0; scale = 1;
+  }
+
+  const REPULSION  = 3000;
+  const SPRING_K   = 0.04;
+  const SPRING_LEN = 120;
+  const CENTER_K   = 0.003;
+  const DAMPING    = 0.85;
+
+  function step() {
+    const n = simNodes.length;
+    for (let i = 0; i < n; i++) {
+      simNodes[i].fx = 0; simNodes[i].fy = 0;
+    }
+    // Repulsión (Coulomb)
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const dx = simNodes[j].x - simNodes[i].x;
+        const dy = simNodes[j].y - simNodes[i].y;
+        const dist2 = dx * dx + dy * dy + 0.01;
+        const f = REPULSION / dist2;
+        const fx = f * dx / Math.sqrt(dist2);
+        const fy = f * dy / Math.sqrt(dist2);
+        simNodes[i].fx -= fx; simNodes[i].fy -= fy;
+        simNodes[j].fx += fx; simNodes[j].fy += fy;
+      }
+    }
+    // Resortes (Hooke) por aristas
+    edges.forEach(e => {
+      const a = adjMap[e.from]; const b = adjMap[e.to];
+      if (!a || !b) return;
+      const dx = b.x - a.x; const dy = b.y - a.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) + 0.01;
+      const f = SPRING_K * (dist - SPRING_LEN);
+      const fx = f * dx / dist; const fy = f * dy / dist;
+      if (!a.pinned) { a.fx += fx; a.fy += fy; }
+      if (!b.pinned) { b.fx -= fx; b.fy -= fy; }
+    });
+    // Centrado
+    simNodes.forEach(sn => {
+      if (sn.pinned) return;
+      sn.fx += CENTER_K * (canvasW / 2 - sn.x);
+      sn.fy += CENTER_K * (canvasH / 2 - sn.y);
+      sn.vx = (sn.vx + sn.fx) * DAMPING;
+      sn.vy = (sn.vy + sn.fy) * DAMPING;
+      sn.x += sn.vx;
+      sn.y += sn.vy;
+    });
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvasW, canvasH);
+
+    // Aristas
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#30363d';
+    edges.forEach(e => {
+      const a = adjMap[e.from]; const b = adjMap[e.to];
+      if (!a || !b) return;
+      const [ax, ay] = toScreen(a.x, a.y);
+      const [bx, by] = toScreen(b.x, b.y);
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    });
+
+    // Nodos
+    const R = Math.max(5, Math.min(10, scale * 8));
+    simNodes.forEach(sn => {
+      const [sx, sy] = toScreen(sn.x, sn.y);
+      if (sx < -R || sx > canvasW + R || sy < -R || sy > canvasH + R) return;
+      ctx.beginPath(); ctx.arc(sx, sy, R, 0, 2 * Math.PI);
+      ctx.fillStyle = colorFor(sn.kind);
+      ctx.fill();
+      // borde tintado por raíz
+      ctx.strokeStyle = tintFor(sn.root);
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // etiqueta
+      if (scale > 0.5) {
+        ctx.fillStyle = '#e6edf3';
+        ctx.font = `${Math.max(9, 11 * scale)}px system-ui,sans-serif`;
+        ctx.fillText(sn.symbol.length > 18 ? sn.symbol.slice(0, 16) + '…' : sn.symbol, sx + R + 3, sy + 4);
+      }
+    });
+  }
+
+  function loop() {
+    step(); draw();
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function warmup(iter) {
+    for (let i = 0; i < iter; i++) step();
+    warmupDone = true;
+  }
+
+  function loadGraph(rootName) {
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+    warmupDone = false;
+    const url = rootName ? `/api/graph?root=${encodeURIComponent(rootName)}` : '/api/graph';
+    api(url).then(data => {
+      nodes = data.nodes || [];
+      edges = data.edges || [];
+      // Mapa raíz → tinte
+      const roots = [...new Set(nodes.map(n => n.root))];
+      rootTintMap = {};
+      roots.forEach((r, i) => { rootTintMap[r] = ROOT_TINTS[i % ROOT_TINTS.length]; });
+      // Mapa id → simNode
+      adjMap = {};
+      simNodes = nodes.map(n => {
+        const sn = { id: n.id, symbol: n.symbol, kind: n.kind, file_path: n.file_path, root: n.root, x: 0, y: 0, vx: 0, vy: 0, fx: 0, fy: 0, pinned: false };
+        adjMap[n.id] = sn;
+        return sn;
+      });
+      resize();
+      initPositions();
+      warmup(200);
+      rafId = requestAnimationFrame(loop);
+    }).catch(() => {
+      nodes = []; edges = []; simNodes = []; adjMap = {};
+    });
+  }
+
+  function nodeAt(sx, sy) {
+    const R = Math.max(5, Math.min(10, scale * 8)) + 4;
+    for (const sn of simNodes) {
+      const [nx, ny] = toScreen(sn.x, sn.y);
+      const dx = sx - nx; const dy = sy - ny;
+      if (dx * dx + dy * dy <= R * R) return sn;
+    }
+    return null;
+  }
+
+  function attach(cvs) {
+    canvas = cvs; ctx = canvas.getContext('2d');
+
+    canvas.addEventListener('wheel', e => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left; const my = e.clientY - rect.top;
+      panX = mx - delta * (mx - panX);
+      panY = my - delta * (my - panY);
+      scale *= delta;
+    }, { passive: false });
+
+    canvas.addEventListener('mousedown', e => {
+      const rect = canvas.getBoundingClientRect();
+      const sx = e.clientX - rect.left; const sy = e.clientY - rect.top;
+      const hit = nodeAt(sx, sy);
+      if (hit) {
+        dragNode = hit;
+        const [wx, wy] = toWorld(sx, sy);
+        dragOffX = wx - hit.x; dragOffY = wy - hit.y;
+        hit.pinned = true;
+      } else {
+        isPanning = true;
+        panStartX = sx; panStartY = sy;
+        panStartPanX = panX; panStartPanY = panY;
+      }
+    });
+
+    window.addEventListener('mousemove', e => {
+      const rect = canvas.getBoundingClientRect();
+      const sx = e.clientX - rect.left; const sy = e.clientY - rect.top;
+      if (dragNode) {
+        const [wx, wy] = toWorld(sx, sy);
+        dragNode.x = wx - dragOffX; dragNode.y = wy - dragOffY;
+      } else if (isPanning) {
+        panX = panStartPanX + (sx - panStartX);
+        panY = panStartPanY + (sy - panStartY);
+      }
+    });
+
+    window.addEventListener('mouseup', e => {
+      if (dragNode) { dragNode.pinned = false; dragNode = null; }
+      isPanning = false;
+    });
+
+    canvas.addEventListener('click', e => {
+      if (dragNode) return;
+      const rect = canvas.getBoundingClientRect();
+      const sx = e.clientX - rect.left; const sy = e.clientY - rect.top;
+      const hit = nodeAt(sx, sy);
+      if (hit) loadDetail({ symbol: hit.symbol, kind: hit.kind });
+    });
+
+    window.addEventListener('resize', () => { if (currentTab === 'viz') { resize(); } });
+  }
+
+  return { attach, loadGraph };
+})();
+
+let vizLoaded = false;
+function vizActivate() {
+  if (!vizLoaded) {
+    viz.attach(document.getElementById('viz-canvas'));
+    // Poblar selector de raíces
+    api('/api/context').then(ctx => {
+      const sel = document.getElementById('viz-root-select');
+      (ctx.roots || []).forEach(r => {
+        const opt = document.createElement('option');
+        opt.value = r.name; opt.textContent = r.name;
+        sel.appendChild(opt);
+      });
+      sel.addEventListener('change', () => viz.loadGraph(sel.value));
+    });
+    viz.loadGraph('');
+    vizLoaded = true;
+  }
+}
 </script>
 </body>
 </html>
