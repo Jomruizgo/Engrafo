@@ -354,13 +354,16 @@ Búsqueda FTS5 sobre nombres y firmas de símbolos. Soporta sintaxis de match SQ
 ```
 
 ### `cg_deadcode`
-Detecta código muerto:
-- **Huérfanos:** nodos que nunca tuvieron ninguna arista entrante.
-- **Abandonados:** nodos que tenían aristas entrantes y las perdieron todas. El modelo bi-temporal hace esta detección altamente precisa.
+Detecta código muerto. Solo evalúa `function`, `class` e `interface` — los `method` se excluyen porque se invocan sobre instancias, no por nombre, y no pueden tener aristas entrantes bajo el modelo actual.
+
+- **Huérfanos:** nodos que nunca tuvieron ninguna arista entrante (`uses`, `calls`, `inherits`).
+- **Abandonados:** nodos que tenían aristas entrantes y las perdieron todas. El modelo bi-temporal hace esta detección altamente precisa — distingue "nunca usado" de "fue usado y dejó de serlo".
 
 ```json
 { "threshold_days": 30 }   // opcional: solo inactivos por más de N días
 ```
+
+> **Nota sobre entrypoints externos:** funciones invocadas por infraestructura (AWS Lambda `lambda_handler`, webhooks, cron) aparecen como huérfanas porque ningún código interno las llama. Son falsos positivos esperados que el agente debe interpretar con contexto.
 
 ### `cg_history`
 Timeline cronológico de aristas para un símbolo: cuándo aparecieron y desaparecieron dependencias, con qué commit.
@@ -437,9 +440,17 @@ engrafo/
 
 ### Modelo de datos
 
-- **Nodos:** símbolos (funciones, clases, interfaces, paquetes) y archivos.
-- **Aristas:** dirigidas, con (valid_from_commit) para la aparición y (valid_until_commit) para la desaparición. Nunca se eliminan — se invalidan.
-- **Anchors:** tabla (engram_anchors) vincula (engram_obs_id) → (node_id).
+- **Nodos:** `file`, `function`, `class`, `method`, `interface`, `package`, `external`.
+- **Aristas:** dirigidas, con `valid_from_rev` para la aparición y `valid_until_rev` para la desaparición. Nunca se eliminan — se invalidan. Tipos emitidos por los extractores:
+
+| Tipo | Semántica | Ejemplo |
+|------|-----------|---------|
+| `imports` | archivo depende de módulo/archivo | `auth.ts → ./utils` |
+| `uses` | archivo referencia símbolo por nombre (named import) | `auth.ts → AuthService` |
+| `calls` | símbolo es invocado dentro del mismo archivo | `handler.py → validate_input` |
+| `inherits` | clase extiende otra | `AdminUser → User` |
+
+- **Anchors:** tabla `engram_anchors` vincula `engram_obs_id` → `node_id`.
 
 ### Migración v1 → v2
 
@@ -482,7 +493,7 @@ CGO_ENABLED=1 go test ./... -count=1 -tags cgo
 go build ./cmd/engrafo
 ```
 
-**Nota para Windows:** MSYS2 mingw64 con GCC 16+ rompe CGO con Go 1.25.x. Para desarrollo con CGO usar TDM-GCC, w64devkit, o MSYS2 ucrt64 (GCC 14). Ver sección "CGO en Windows" en Instalación. Para tests y CI sin parser tree-sitter: `CGO_ENABLED=0 go test ./... -count=1`.
+**Nota para Windows:** TDM-GCC 10.x rompe CGO con Go 1.25.x (binarios que Windows rechaza). Usar MSYS2 mingw64 GCC 16+ o w64devkit. Ver sección "CGO en Windows" en Instalación. Para tests y CI sin parser tree-sitter: `CGO_ENABLED=0 go test ./... -count=1`.
 
 ---
 
