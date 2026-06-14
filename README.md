@@ -95,6 +95,67 @@ Descarga el binario para tu plataforma desde [Releases](https://github.com/Jomru
 
 ---
 
+## Multi-repo (workspace)
+
+Engrafo funciona en tres modos con el mismo binario. El modo se detecta automáticamente al ejecutar cualquier comando:
+
+| Modo | Cómo se activa | Base de datos |
+|---|---|---|
+| **Multi-repo** | Existe `engrafo.json` en algún directorio padre del CWD | `<workspace>/.engrafo/graph.db` |
+| **Single-repo con git** | No hay manifest, pero hay `.git` en algún directorio padre | `<gitroot>/.engrafo/graph.db` |
+| **Single-repo sin git** | No hay ni manifest ni `.git` | `<cwd>/.engrafo/graph.db` |
+
+En todos los modos la capa de query es idéntica. El single-repo es un multi-repo de una sola raíz registrada automáticamente.
+
+### Crear un workspace
+
+```sh
+cd /carpeta/que/agrupa/tus/repos   # puede ser cualquier carpeta, no tiene que ser padre de las raíces
+engrafo workspace add backend-auth ./services/auth
+engrafo workspace add product-front ../platform-product
+engrafo workspace add e2e D:/otra/ruta/e2e
+engrafo init           # indexa todas las raíces registradas
+engrafo hooks install  # instala MCP + hooks una sola vez para todo el workspace
+```
+
+### Formato de `engrafo.json`
+
+El archivo se crea y gestiona mediante `workspace add`, pero puede editarse a mano:
+
+```json
+{
+  "version": 1,
+  "roots": [
+    { "name": "backend-auth",   "path": "./services/auth" },
+    { "name": "product-front",  "path": "../platform-product" },
+    { "name": "e2e",            "path": "D:/rutas/dispersas/e2e",
+      "remote": "git@github.com:org/e2e.git", "branch": "main", "vcs": "git" }
+  ]
+}
+```
+
+Reglas: `name` debe ser único y solo letras, números, `.`, `_`, `-`. `path` relativo se resuelve desde el directorio del manifest. Si el directorio no existe, el comando aborta con error.
+
+### Aviso clave sobre repos independientes
+
+**Cada raíz es un repositorio independiente.** Engrafo nunca hace push ni commit. El agente recibe la ruta y el remote de cada raíz en el mensaje de sesión (via el hook `session-start`), y debe hacer `cd` a la raíz correcta antes de ejecutar `git commit` o `git push`. Ejemplo: si el workspace tiene `backend-auth` en `./services/auth`, el agente debe `cd services/auth && git commit` — no desde la raíz del workspace.
+
+---
+
+## Sin git
+
+Engrafo funciona sin `.git`. En ese caso la raíz se registra con `vcs=none` y los cambios se detectan por **checksum SHA-256** del contenido de cada archivo:
+
+- Cada `engrafo update` compara el checksum actual de cada archivo con el indexado. Si hay cambios, crea una revisión `source=checksum` y actualiza solo los archivos modificados.
+- El hook `session-start` dispara un update automático al inicio de cada sesión, por lo que los cambios quedan registrados sin intervención manual.
+
+**Limitaciones honestas vs. git:**
+- Sin git no hay `--from-git` (no se puede replay del pasado anterior al primer `init`).
+- Los cambios realizados con engrafo apagado y sin ejecutar `update` no quedan en el historial.
+- La granularidad de la historia es "por update", no por commit.
+
+---
+
 ## Quickstart
 
 ```sh
@@ -190,23 +251,34 @@ Configura `.opencode/settings.json`.
 engrafo [--db <ruta>] <comando> [args]
 ```
 
-| Comando                        | Descripción                                                                 |
-|-------------------------------|-----------------------------------------------------------------------------|
-| `init [root]`                 | Indexa el repositorio desde cero. Crea `.engrafo/graph.db`.                |
-| `init --from-git N [root]`    | Replaya los últimos N commits para construir historia bi-temporal.          |
-| `update`                      | Actualización incremental: solo archivos cambiados desde el último commit.  |
-| `serve`                       | Inicia el servidor MCP en stdio. Usado por la configuración del agente.     |
-| `ui [--port N]`               | Abre el navegador de grafo en `http://localhost:8080` (defecto: 8080).      |
-| `deadcode [--json] [--threshold-days N]` | Lista candidatos a dead code (huérfanos y abandonados).        |
-| `status`                      | Muestra estadísticas del índice: nodos, aristas, último commit.             |
-| `query <symbol>`              | Consulta un símbolo directamente desde la CLI.                              |
-| `hooks install`               | Instala hooks de Claude Code en `.claude/settings.json`.                   |
-| `hooks uninstall`             | Elimina los hooks instalados.                                               |
-| `doctor`                      | Verifica la instalación: BD, schema, soporte FTS5.                          |
+| Comando                                   | Descripción                                                                                     |
+|-------------------------------------------|-------------------------------------------------------------------------------------------------|
+| `workspace add <name> <path> [flags]`     | Registra una raíz en el workspace (crea `engrafo.json` si no existe) e indexa inmediatamente.  |
+| `workspace list`                          | Lista raíces registradas con ruta, VCS, remote, nodos indexados y fecha.                        |
+| `workspace remove <name>`                 | Elimina la raíz del manifest y borra sus nodos/aristas de la BD (cascada).                      |
+| `init [root]`                             | Indexa el repositorio o workspace desde cero. Crea `.engrafo/graph.db`.                        |
+| `init --from-git N [root]`                | Replaya los últimos N commits para construir historia bi-temporal (solo raíces con git).        |
+| `update [--root <name>]`                  | Actualización incremental. Sin `--root`: todas las raíces. Con `--root`: solo esa.             |
+| `serve`                                   | Inicia el servidor MCP en stdio. Usado por la configuración del agente.                         |
+| `ui [--port N]`                           | Abre el navegador de grafo en `http://localhost:8080` (defecto: 8080).                          |
+| `deadcode [--json] [--threshold-days N]`  | Lista candidatos a dead code (huérfanos y abandonados).                                         |
+| `status`                                  | Muestra estadísticas del índice: nodos, aristas, raíces, último commit por raíz.               |
+| `query <symbol>`                          | Consulta un símbolo directamente desde la CLI.                                                  |
+| `hooks install`                           | Instala hooks de Claude Code en `.claude/settings.json`.                                        |
+| `hooks uninstall`                         | Elimina los hooks instalados.                                                                    |
+| `doctor`                                  | Verifica la instalación: BD, schema, soporte FTS5.                                              |
 
 **Flag global:**
 
-`--db <ruta>` — ruta explícita al archivo `graph.db`. Por defecto se detecta automáticamente desde el directorio git raíz como `.engrafo/graph.db`.
+`--db <ruta>` — ruta explícita al archivo `graph.db`. Por defecto se detecta automáticamente: primero busca `engrafo.json` subiendo por padres, luego `.git`, luego usa el directorio actual.
+
+**Flags de `workspace add`:**
+
+```sh
+--remote <url>     # URL remota del repo (se auto-detecta de git origin si no se pasa)
+--branch <branch>  # Rama por defecto (se auto-detecta de HEAD si no se pasa)
+--vcs git|none     # Fuerza el tipo de VCS (se auto-detecta si no se pasa)
+```
 
 ---
 
@@ -313,12 +385,17 @@ engrafo ui --port 3000
 # → http://localhost:3000
 ```
 
-Interfaz local read-only que muestra:
-- Lista de símbolos con búsqueda FTS5
-- Detalle de nodo: aristas activas, aristas históricas invalidadas, observaciones de engram ancladas
-- Tab de dead code: huérfanos y abandonados
+Interfaz local read-only con tres pestañas:
 
-No requiere internet. No instala dependencias adicionales (el HTML está embebido en el binario).
+- **Graph** — lista de símbolos con búsqueda FTS5 y panel de detalle: aristas activas, históricas e IDs de engram anclados.
+- **Grafo** — visualización force-directed del grafo completo. Permite:
+  - Filtrar por raíz (selector en la barra superior; útil en workspaces multi-repo).
+  - Arrastrar nodos, hacer zoom con la rueda del ratón, pan con arrastre del fondo.
+  - Click en un nodo para ver su detalle en el panel lateral.
+  - Color de relleno por tipo de símbolo; borde tintado por raíz (cada raíz recibe un color distinto).
+- **Dead Code** — huérfanos (nunca tuvieron referencias) y abandonados (las perdieron).
+
+No requiere internet. No instala dependencias adicionales (el HTML y todo el JS están embebidos en el binario).
 
 ---
 
@@ -342,6 +419,18 @@ engrafo/
 - **Nodos:** símbolos (funciones, clases, interfaces, paquetes) y archivos.
 - **Aristas:** dirigidas, con (valid_from_commit) para la aparición y (valid_until_commit) para la desaparición. Nunca se eliminan — se invalidan.
 - **Anchors:** tabla (engram_anchors) vincula (engram_obs_id) → (node_id).
+
+### Migración v1 → v2
+
+Al abrir una base de datos v1 con un binario v2, **la migración ocurre automáticamente** en la primera ejecución. El proceso:
+
+1. Crea las tablas `roots` y `revisions`.
+2. Registra el repo existente como raíz #1.
+3. Mapea los hashes de commit a revisiones.
+4. Añade `root_id` a todos los nodos.
+5. Reconstruye la tabla `edges` con las columnas `valid_from_rev`/`valid_until_rev`.
+
+**Se recomienda hacer una copia de `graph.db` antes de la primera ejecución** para tener un punto de restauración. La migración preserva todos los nodos, aristas (activas e históricas) y anchors.
 
 ### CGO
 
