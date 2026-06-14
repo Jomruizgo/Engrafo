@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "name": "engrafo",
   "display_name": "Engrafo — Code Graph",
-  "version": "2.0.0",
+  "version": "2.0.3",
   "description": "Structural code graph for coding agents. Bi-temporal dependency analysis, symbol search, dead code detection, and change history — without re-reading source files.",
   "author": "jomruizgo",
   "license": "MIT",

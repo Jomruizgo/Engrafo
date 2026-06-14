@@ -57,10 +57,31 @@ proyecto:  engrafo hooks install  →  configura .claude/settings.json
 
 ### go install (recomendado)
 
-Requiere Go 1.22+. CGO no requerido.
+Requiere Go 1.25.5+ y **CGO habilitado** (necesario para el parser tree-sitter que extrae símbolos).
+
+> **Sin CGO el binario compila y arranca, pero `engrafo init` no extrae ningún símbolo.** Las revisiones git se registran, pero el grafo queda vacío.
 
 ```sh
-go install github.com/Jomruizgo/Engrafo/cmd/engrafo@latest
+CGO_ENABLED=1 go install github.com/Jomruizgo/Engrafo/v2/cmd/engrafo@latest
+```
+
+#### CGO en Windows
+
+Requiere un compilador C compatible con Go 1.25.x. TDM-GCC 10.x está roto (produce binarios que Windows rechaza). Opciones probadas:
+
+| Opción | GCC | Instalación |
+|---|---|---|
+| **MSYS2 mingw64** (recomendado) | 16.x | [msys2.org](https://www.msys2.org/) → `pacman -S mingw-w64-x86_64-gcc` |
+| **MSYS2 ucrt64** | 14–16.x | `pacman -S mingw-w64-ucrt-x86_64-gcc` — variante ucrt |
+| **w64devkit** | 13.x | [github.com/skeeto/w64devkit](https://github.com/skeeto/w64devkit/releases) — portable, sin instalador |
+
+Tras instalar MSYS2, agrega `C:\msys64\mingw64\bin` al PATH de usuario y luego:
+
+```sh
+gcc --version       # debe reportar mingw64 o ucrt64, no TDM-GCC
+set CGO_ENABLED=1
+go install github.com/Jomruizgo/Engrafo/v2/cmd/engrafo@latest
+engrafo doctor
 ```
 
 Verifica:
@@ -434,14 +455,14 @@ Al abrir una base de datos v1 con un binario v2, **la migración ocurre automát
 
 ### CGO
 
-| Funcionalidad         | CGO requerido |
-|----------------------|---------------|
-| Parser tree-sitter   | Sí            |
-| SQLite (modernc)     | No            |
-| MCP server           | No            |
-| UI server            | No            |
+| Funcionalidad              | CGO requerido | Sin CGO                                  |
+|---------------------------|---------------|------------------------------------------|
+| Parser tree-sitter        | **Sí**        | `init` corre pero no extrae símbolos     |
+| SQLite (modernc)          | No            | Funciona completo                        |
+| MCP server                | No            | Funciona completo                        |
+| UI server / grafo visual  | No            | Funciona completo                        |
 
-El binario funciona sin CGO. Sin CGO, `engrafo init` requiere que el código fuente ya esté parseado o se use un extractor alternativo. La distribución oficial incluye CGO habilitado.
+La distribución oficial se compila con CGO. Sin CGO el binario arranca y todos los comandos excepto la extracción de símbolos funcionan — útil para CI, tests y ambientes sin compilador C.
 
 ---
 
@@ -461,7 +482,7 @@ CGO_ENABLED=1 go test ./... -count=1 -tags cgo
 go build ./cmd/engrafo
 ```
 
-**Nota para Windows:** MSYS2 con GCC 16+ rompe CGO con Go 1.25.x. Usar `CGO_ENABLED=0` para tests y desarrollo sin parser tree-sitter.
+**Nota para Windows:** MSYS2 mingw64 con GCC 16+ rompe CGO con Go 1.25.x. Para desarrollo con CGO usar TDM-GCC, w64devkit, o MSYS2 ucrt64 (GCC 14). Ver sección "CGO en Windows" en Instalación. Para tests y CI sin parser tree-sitter: `CGO_ENABLED=0 go test ./... -count=1`.
 
 ---
 
