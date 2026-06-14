@@ -4,29 +4,29 @@ import "fmt"
 
 // DependentNode is a node returned by dependency queries.
 type DependentNode struct {
-	Symbol   string
-	FilePath string
-	Kind     string
-	EdgeKind string
-	Depth    int
-	Root     string // nombre de la raíz que contiene el nodo
+	Symbol   string `json:"symbol"`
+	FilePath string `json:"file_path"`
+	Kind     string `json:"kind"`
+	EdgeKind string `json:"edge_kind"`
+	Depth    int    `json:"depth"`
+	Root     string `json:"root"`
 }
 
 // SearchResult is a node returned by FTS5 symbol search.
 type SearchResult struct {
-	Symbol   string
-	Kind     string
-	FilePath string
-	Root     string
+	Symbol   string `json:"symbol"`
+	Kind     string `json:"kind"`
+	FilePath string `json:"file_path"`
+	Root     string `json:"root"`
 }
 
 // NodeSummary is a compact node representation for project context.
 type NodeSummary struct {
-	Symbol   string
-	Kind     string
-	FilePath string
-	InDegree int
-	Root     string
+	Symbol   string `json:"symbol"`
+	Kind     string `json:"kind"`
+	FilePath string `json:"file_path"`
+	InDegree int    `json:"in_degree"`
+	Root     string `json:"root"`
 }
 
 // RootContext is per-root statistics returned by Context.
@@ -42,32 +42,32 @@ type RootContext struct {
 
 // ProjectContext is the high-level summary returned by cg_context.
 type ProjectContext struct {
-	TotalNodes int
-	Languages  []string
-	TopNodes   []NodeSummary
-	NodeCounts map[string]int
-	Roots      []RootContext
+	TotalNodes int               `json:"total_nodes"`
+	Languages  []string          `json:"languages"`
+	TopNodes   []NodeSummary     `json:"top_nodes"`
+	NodeCounts map[string]int    `json:"node_counts"`
+	Roots      []RootContext     `json:"roots"`
 }
 
 // NodeDetail holds the full metadata for a single graph node.
 type NodeDetail struct {
-	ID        int64
-	Symbol    string
-	Kind      string
-	FilePath  string
-	LineStart int
-	LineEnd   int
-	Language  string
-	Root      string
+	ID        int64  `json:"id"`
+	Symbol    string `json:"symbol"`
+	Kind      string `json:"kind"`
+	FilePath  string `json:"file_path"`
+	LineStart int    `json:"line_start"`
+	LineEnd   int    `json:"line_end"`
+	Language  string `json:"language"`
+	Root      string `json:"root"`
 }
 
 // NodeInfoResult holds a node's details plus its incoming/outgoing edges and anchors.
 type NodeInfoResult struct {
-	Node            NodeDetail
-	DependsOn       []DependentNode
-	UsedBy          []DependentNode
-	HistoricalEdges []DependentNode
-	AnchoredObsIDs  []string
+	Node            NodeDetail      `json:"node"`
+	DependsOn       []DependentNode `json:"depends_on"`
+	UsedBy          []DependentNode `json:"used_by"`
+	HistoricalEdges []DependentNode `json:"historical_edges"`
+	AnchoredObsIDs  []string        `json:"anchored_obs_ids"`
 }
 
 // QueryResult is an alias kept for backwards compatibility.

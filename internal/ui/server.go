@@ -72,6 +72,7 @@ func (s *Server) handleContext(w http.ResponseWriter, r *http.Request) {
 		"top_nodes": ctx.TopNodes,
 		"stats":     stats{TotalNodes: ctx.TotalNodes},
 		"counts":    ctx.NodeCounts,
+		"roots":     ctx.Roots,
 	})
 }
 

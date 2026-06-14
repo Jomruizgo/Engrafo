@@ -4,29 +4,29 @@ import "fmt"
 
 // OrphanNode is a node that never had any incoming edges.
 type OrphanNode struct {
-	Symbol   string
-	Kind     string
-	FilePath string
-	Language string
-	Root     string
+	Symbol   string `json:"symbol"`
+	Kind     string `json:"kind"`
+	FilePath string `json:"file_path"`
+	Language string `json:"language"`
+	Root     string `json:"root"`
 }
 
 // AbandonedNode is a node that once had incoming edges but now has none.
 // DaysSinceAbandoned is exact: computed from the created_at of the invalidating revision.
 type AbandonedNode struct {
-	Symbol             string
-	Kind               string
-	FilePath           string
-	Language           string
-	PeakIncomingEdges  int
-	DaysSinceAbandoned float64
-	Root               string
+	Symbol             string  `json:"symbol"`
+	Kind               string  `json:"kind"`
+	FilePath           string  `json:"file_path"`
+	Language           string  `json:"language"`
+	PeakIncomingEdges  int     `json:"peak_incoming_edges"`
+	DaysSinceAbandoned float64 `json:"days_since_abandoned"`
+	Root               string  `json:"root"`
 }
 
 // DeadcodeResult holds the output of a dead-code scan.
 type DeadcodeResult struct {
-	Orphans   []OrphanNode
-	Abandoned []AbandonedNode
+	Orphans   []OrphanNode   `json:"orphans"`
+	Abandoned []AbandonedNode `json:"abandoned"`
 }
 
 // Deadcode scans the graph for dead-code candidates.
