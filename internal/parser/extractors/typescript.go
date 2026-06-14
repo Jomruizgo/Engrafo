@@ -97,11 +97,16 @@ func (e *TypeScriptExtractor) Extract(filePath string, source []byte) (*parser.R
 		})
 	}
 
+	// index locally-defined symbols for intra-file call matching
+	defined := make(map[string]bool, len(nodes))
+	for _, n := range nodes {
+		defined[n.Symbol] = true
+	}
+
 	// file-level import edges (module dependency)
-	// Resolution:
-	//   "./foo" or "../foo" -> resolved against filePath (project-root-relative)
-	//   "@/foo"             -> "src/foo" (standard Vue/Vite alias)
-	//   "pkg"               -> last path segment (treated as external)
+	// "./foo" or "../foo" -> resolved against filePath (project-root-relative)
+	// "@/foo"             -> "src/foo" (standard Vue/Vite alias)
+	// "pkg"               -> last path segment (treated as external)
 	for _, cap := range queryAll(lang, root, source,
 		`(import_statement source: (string) @src)`, "src") {
 		raw := strings.Trim(cap.text, `"'`)
@@ -126,8 +131,6 @@ func (e *TypeScriptExtractor) Extract(filePath string, source []byte) (*parser.R
 	// "import { Actor, Question } from './actor'" emits:
 	//   filePath -[uses]-> Actor
 	//   filePath -[uses]-> Question
-	// The builder resolves each name against existing non-external nodes in
-	// the same root; matches give accurate used_by data for cg_impact.
 	for _, cap := range queryAll(lang, root, source,
 		`(import_statement (import_clause (named_imports (import_specifier name: (identifier) @name))))`,
 		"name") {
@@ -136,6 +139,30 @@ func (e *TypeScriptExtractor) Extract(filePath string, source []byte) (*parser.R
 			ToSymbol:   cap.text,
 			Kind:       "uses",
 		})
+	}
+
+	// intra-file call edges: function/method calls whose callee is defined in this file.
+	// No cross-file name resolution needed — only emit when callee is in `defined`.
+	// Covers: foo()  and  new Foo()
+	for _, cap := range queryAll(lang, root, source,
+		`(call_expression function: (identifier) @callee)`, "callee") {
+		if defined[cap.text] {
+			edges = append(edges, parser.Edge{
+				FromSymbol: filePath,
+				ToSymbol:   cap.text,
+				Kind:       "calls",
+			})
+		}
+	}
+	for _, cap := range queryAll(lang, root, source,
+		`(new_expression constructor: (identifier) @name)`, "name") {
+		if defined[cap.text] {
+			edges = append(edges, parser.Edge{
+				FromSymbol: filePath,
+				ToSymbol:   cap.text,
+				Kind:       "calls",
+			})
+		}
 	}
 
 	// inheritance edges

@@ -80,6 +80,12 @@ func (e *PythonExtractor) Extract(filePath string, source []byte) (*parser.Resul
 		})
 	}
 
+	// index locally-defined symbols for intra-file call matching
+	defined := make(map[string]bool, len(nodes))
+	for _, n := range nodes {
+		defined[n.Symbol] = true
+	}
+
 	// file-level import edges: "import os" -> file -[imports]-> os
 	for _, cap := range queryAll(lang, root, source,
 		`(import_statement name: (dotted_name) @mod)`, "mod") {
@@ -105,9 +111,6 @@ func (e *PythonExtractor) Extract(filePath string, source []byte) (*parser.Resul
 	// symbol-level uses edges: "from X import AuthService, UserError" emits:
 	//   filePath -[uses]-> AuthService
 	//   filePath -[uses]-> UserError
-	// Handles both absolute ("from services import X") and relative ("from . import X").
-	// The builder resolves each name against existing non-external nodes in the
-	// same root; matches give accurate used_by data for cg_impact.
 	for _, cap := range queryAll(lang, root, source,
 		`(import_from_statement name: (dotted_name) @name)`, "name") {
 		edges = append(edges, parser.Edge{
@@ -115,6 +118,21 @@ func (e *PythonExtractor) Extract(filePath string, source []byte) (*parser.Resul
 			ToSymbol:   cap.text,
 			Kind:       "uses",
 		})
+	}
+
+	// intra-file call edges: function/class calls whose callee is defined in this file.
+	// Python uses the same syntax for function calls and class instantiation (Foo()).
+	// Only identifier callees — attribute access (self.foo(), obj.method()) is skipped
+	// since it requires type resolution.
+	for _, cap := range queryAll(lang, root, source,
+		`(call function: (identifier) @callee)`, "callee") {
+		if defined[cap.text] {
+			edges = append(edges, parser.Edge{
+				FromSymbol: filePath,
+				ToSymbol:   cap.text,
+				Kind:       "calls",
+			})
+		}
 	}
 
 	return &parser.Result{Nodes: nodes, Edges: edges}, nil
