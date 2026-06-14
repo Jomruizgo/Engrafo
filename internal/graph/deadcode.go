@@ -56,7 +56,7 @@ func (q *Querier) Deadcode(thresholdDays int) (*DeadcodeResult, error) {
 
 // deadcodeFilter is the shared WHERE clause for both queries.
 const deadcodeFilter = `
-    n.kind NOT IN ('external', 'file', 'package')
+    n.kind NOT IN ('external', 'file', 'package', 'method')
     AND n.file_path NOT LIKE '%_test.go'
     AND NOT (n.language = 'go' AND n.symbol GLOB '[A-Z]*')
     AND n.symbol != 'main'
