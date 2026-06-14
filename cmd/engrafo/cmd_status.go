@@ -1,10 +1,10 @@
-package main
+﻿package main
 
 import (
 	"fmt"
 	"strings"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
 )
 
 func cmdStatus(cfg *config) error {

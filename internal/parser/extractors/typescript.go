@@ -1,4 +1,4 @@
-//go:build cgo
+﻿//go:build cgo
 
 package extractors
 
@@ -9,7 +9,7 @@ import (
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 	tree_sitter_typescript "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
 
-	"github.com/Jomruizgo/Engrafo/internal/parser"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser"
 )
 
 // TypeScriptExtractor extracts nodes and edges from TypeScript/JavaScript source files.
@@ -83,7 +83,7 @@ func (e *TypeScriptExtractor) Extract(filePath string, source []byte) (*parser.R
 	// method definitions (inside class body)
 	for _, cap := range queryAll(lang, root, source,
 		`(method_definition name: (property_identifier) @name)`, "name") {
-		// skip constructor — it's a language keyword, not a user-defined method symbol
+		// skip constructor â€” it's a language keyword, not a user-defined method symbol
 		if cap.text == "constructor" {
 			continue
 		}
@@ -97,7 +97,7 @@ func (e *TypeScriptExtractor) Extract(filePath string, source []byte) (*parser.R
 		})
 	}
 
-	// import edges — source is a string literal like "'events'"
+	// import edges â€” source is a string literal like "'events'"
 	for _, cap := range queryAll(lang, root, source,
 		`(import_statement source: (string) @src)`, "src") {
 		raw := strings.Trim(cap.text, `"'`)
@@ -111,7 +111,7 @@ func (e *TypeScriptExtractor) Extract(filePath string, source []byte) (*parser.R
 		})
 	}
 
-	// inheritance edges — class Foo extends Bar → inherits
+	// inheritance edges â€” class Foo extends Bar â†’ inherits
 	for _, cap := range queryAll(lang, root, source,
 		`(extends_clause value: (identifier) @parent)`, "parent") {
 		edges = append(edges, parser.Edge{

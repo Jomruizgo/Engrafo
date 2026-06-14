@@ -1,12 +1,12 @@
-// Package mcp implements the MCP server (stdio transport).
+﻿// Package mcp implements the MCP server (stdio transport).
 package mcp
 
 import (
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
-	"github.com/Jomruizgo/Engrafo/internal/version"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/version"
 )
 
 // Server is the engrafo MCP server exposing all registered tools.

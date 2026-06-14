@@ -1,4 +1,4 @@
-package engrafo_test
+﻿package engrafo_test
 
 // Smoke test: verifies that all main packages compile.
 // This is the only test in feature/scaffolding.
@@ -7,13 +7,13 @@ package engrafo_test
 import (
 	"testing"
 
-	_ "github.com/Jomruizgo/Engrafo/internal/engram"
-	_ "github.com/Jomruizgo/Engrafo/internal/graph"
-	_ "github.com/Jomruizgo/Engrafo/internal/hooks"
-	_ "github.com/Jomruizgo/Engrafo/internal/mcp"
-	_ "github.com/Jomruizgo/Engrafo/internal/parser"
-	_ "github.com/Jomruizgo/Engrafo/internal/parser/extractors"
-	_ "github.com/Jomruizgo/Engrafo/internal/watcher"
+	_ "github.com/Jomruizgo/Engrafo/v2/internal/engram"
+	_ "github.com/Jomruizgo/Engrafo/v2/internal/graph"
+	_ "github.com/Jomruizgo/Engrafo/v2/internal/hooks"
+	_ "github.com/Jomruizgo/Engrafo/v2/internal/mcp"
+	_ "github.com/Jomruizgo/Engrafo/v2/internal/parser"
+	_ "github.com/Jomruizgo/Engrafo/v2/internal/parser/extractors"
+	_ "github.com/Jomruizgo/Engrafo/v2/internal/watcher"
 )
 
 func TestSmoke(t *testing.T) {

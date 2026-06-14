@@ -1,4 +1,4 @@
-//go:build cgo
+﻿//go:build cgo
 
 package extractors
 
@@ -9,7 +9,7 @@ import (
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 	tree_sitter_golang "github.com/tree-sitter/tree-sitter-go/bindings/go"
 
-	"github.com/Jomruizgo/Engrafo/internal/parser"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser"
 )
 
 // GoExtractor extracts nodes and edges from Go source files using tree-sitter.
@@ -79,7 +79,7 @@ func (e *GoExtractor) Extract(filePath string, source []byte) (*parser.Result, e
 		})
 	}
 
-	// struct types → kind "class"
+	// struct types â†’ kind "class"
 	for _, cap := range queryAll(lang, root, source,
 		`(type_declaration (type_spec name: (type_identifier) @name type: (struct_type)))`, "name") {
 		nodes = append(nodes, parser.Node{
@@ -109,7 +109,7 @@ func (e *GoExtractor) Extract(filePath string, source []byte) (*parser.Result, e
 	for _, cap := range queryAll(lang, root, source,
 		`(import_spec path: (interpreted_string_literal) @path)`, "path") {
 		raw := strings.Trim(cap.text, `"`)
-		// use last path segment as the import symbol (e.g. "github.com/foo/bar" → "bar")
+		// use last path segment as the import symbol (e.g. "github.com/foo/bar" â†’ "bar")
 		parts := strings.Split(raw, "/")
 		sym := parts[len(parts)-1]
 		edges = append(edges, parser.Edge{

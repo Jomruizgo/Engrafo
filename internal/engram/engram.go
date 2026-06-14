@@ -1,4 +1,4 @@
-// Package engram handles detection and installation of the engram MCP server.
+﻿// Package engram handles detection and installation of the engram MCP server.
 package engram
 
 import (
@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Jomruizgo/Engrafo/internal/version"
+	"github.com/Jomruizgo/Engrafo/v2/internal/version"
 )
 
 // State describes the current engram installation.
@@ -29,7 +29,7 @@ func Detect() State {
 
 	out, err := exec.Command(path, "--version").Output()
 	if err != nil {
-		// Found but cannot determine version — treat as incompatible.
+		// Found but cannot determine version â€” treat as incompatible.
 		return State{Found: true, Path: path}
 	}
 
@@ -52,7 +52,7 @@ func EnsureCompatible(w io.Writer) error {
 
 	switch {
 	case s.Found && s.Compatible && s.Newer:
-		fmt.Fprintf(w, "  [WARN] engram v%s — newer than tested (%s); compatibility not guaranteed\n",
+		fmt.Fprintf(w, "  [WARN] engram v%s â€” newer than tested (%s); compatibility not guaranteed\n",
 			s.Version, version.EngramCompatible)
 		return nil
 
@@ -61,12 +61,12 @@ func EnsureCompatible(w io.Writer) error {
 		return nil
 
 	case s.Found && !s.Compatible:
-		fmt.Fprintf(w, "  [--]   engram v%s — older than tested (%s); upgrading...\n",
+		fmt.Fprintf(w, "  [--]   engram v%s â€” older than tested (%s); upgrading...\n",
 			s.Version, version.EngramCompatible)
 		return install(w)
 
 	default:
-		fmt.Fprintf(w, "  [--]   engram not found — installing %s...\n", version.EngramCompatible)
+		fmt.Fprintf(w, "  [--]   engram not found â€” installing %s...\n", version.EngramCompatible)
 		return install(w)
 	}
 }
@@ -76,12 +76,12 @@ func EnsureCompatible(w io.Writer) error {
 func install(w io.Writer) error {
 	goExe, err := exec.LookPath("go")
 	if err != nil {
-		fmt.Fprintf(w, "  [FAIL] go not found in PATH — install engram manually:\n")
+		fmt.Fprintf(w, "  [FAIL] go not found in PATH â€” install engram manually:\n")
 		fmt.Fprintf(w, "         brew install gentleman-programming/tap/engram\n")
 		fmt.Fprintf(w, "         scoop install engram\n")
 		fmt.Fprintf(w, "         go install github.com/Gentleman-Programming/engram@%s\n",
 			version.EngramCompatible)
-		return fmt.Errorf("go not in PATH — install engram manually")
+		return fmt.Errorf("go not in PATH â€” install engram manually")
 	}
 
 	pkg := "github.com/Gentleman-Programming/engram@" + version.EngramCompatible

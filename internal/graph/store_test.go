@@ -1,4 +1,4 @@
-package graph_test
+﻿package graph_test
 
 import (
 	"database/sql"
@@ -6,8 +6,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
-	"github.com/Jomruizgo/Engrafo/internal/parser"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser"
 )
 
 // TestStoreSchemaCreation verifies that Open creates all required tables.
@@ -118,7 +118,7 @@ func TestStoreBiTemporalEdge(t *testing.T) {
 		t.Fatalf("active edges before invalidation: want 1, got %d", count)
 	}
 
-	// Invalidate (bi-temporal — UPDATE not DELETE).
+	// Invalidate (bi-temporal â€” UPDATE not DELETE).
 	_, err = db.Exec(`
 		UPDATE edges SET valid_until_rev=?, invalidated_reason='refactor'
 		WHERE from_id=? AND to_id=? AND kind='calls' AND valid_until_rev IS NULL`,
@@ -142,7 +142,7 @@ func TestStoreBiTemporalEdge(t *testing.T) {
 	}
 }
 
-// TestMigrationV1ToV2 — test #1: migrar DB v1 con nodos+aristas al schema v2.
+// TestMigrationV1ToV2 â€” test #1: migrar DB v1 con nodos+aristas al schema v2.
 func TestMigrationV1ToV2(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "v1.db")
@@ -184,14 +184,14 @@ func TestMigrationV1ToV2(t *testing.T) {
 		t.Errorf("all nodes must have root_id=1: total=%d, with root=%d", totalNodes, nodesWithRoot)
 	}
 
-	// Active edge (a.go → FuncB) is still active.
+	// Active edge (a.go â†’ FuncB) is still active.
 	var activeEdges int
 	db.QueryRow(`SELECT COUNT(*) FROM edges WHERE valid_until_rev IS NULL`).Scan(&activeEdges)
 	if activeEdges != 1 {
 		t.Errorf("want 1 active edge after migration, got %d", activeEdges)
 	}
 
-	// Historical edge (a.go → FuncA, invalidated at commit-def) still historical.
+	// Historical edge (a.go â†’ FuncA, invalidated at commit-def) still historical.
 	var historicalEdges int
 	db.QueryRow(`SELECT COUNT(*) FROM edges WHERE valid_until_rev IS NOT NULL`).Scan(&historicalEdges)
 	if historicalEdges != 1 {
@@ -223,7 +223,7 @@ func TestMigrationV1ToV2(t *testing.T) {
 	}
 }
 
-// TestBiTemporalNoGit — test #4 (Store/Builder level): verifica bi-temporalidad sin git.
+// TestBiTemporalNoGit â€” test #4 (Store/Builder level): verifica bi-temporalidad sin git.
 func TestBiTemporalNoGit(t *testing.T) {
 	dir := t.TempDir()
 	s, err := graph.Open(filepath.Join(dir, "test.db"))
@@ -232,7 +232,7 @@ func TestBiTemporalNoGit(t *testing.T) {
 	}
 	defer s.Close()
 
-	// Crear raíz vcs=none.
+	// Crear raÃ­z vcs=none.
 	rootID, err := s.UpsertRoot(graph.ResolvedRoot{
 		Name: "myproject", RelPath: ".", AbsRoot: dir, VCS: "none",
 	})
@@ -240,7 +240,7 @@ func TestBiTemporalNoGit(t *testing.T) {
 		t.Fatalf("UpsertRoot: %v", err)
 	}
 
-	// Revisión inicial (source='init').
+	// RevisiÃ³n inicial (source='init').
 	initRevID, err := s.CreateRevision(rootID, "init", "")
 	if err != nil {
 		t.Fatalf("CreateRevision init: %v", err)
@@ -263,7 +263,7 @@ func TestBiTemporalNoGit(t *testing.T) {
 		t.Fatalf("UpsertFile init: %v", err)
 	}
 
-	// Segunda revisión (source='checksum').
+	// Segunda revisiÃ³n (source='checksum').
 	csRevID, err := s.CreateRevision(rootID, "checksum", "")
 	if err != nil {
 		t.Fatalf("CreateRevision checksum: %v", err)
@@ -304,7 +304,7 @@ func TestBiTemporalNoGit(t *testing.T) {
 		t.Errorf("want invalidated with revID=%d (checksum rev), got %d", csRevID, invalidRevID)
 	}
 
-	// La revisión es source='checksum' y commit_hash=NULL.
+	// La revisiÃ³n es source='checksum' y commit_hash=NULL.
 	var revSource string
 	var revCommitHash sql.NullString
 	db.QueryRow(`SELECT source, commit_hash FROM revisions WHERE id=?`, csRevID).Scan(&revSource, &revCommitHash)
@@ -439,9 +439,9 @@ func seedV1DB(t *testing.T, path string) {
 	db.QueryRow(`SELECT id FROM nodes WHERE symbol='FuncB'`).Scan(&bNodeID)
 	db.QueryRow(`SELECT id FROM nodes WHERE symbol='FuncA'`).Scan(&aNodeID)
 
-	// Active edge: a.go → FuncB (commit-abc).
+	// Active edge: a.go â†’ FuncB (commit-abc).
 	db.Exec(`INSERT INTO edges(from_id, to_id, kind, valid_from_commit) VALUES(?, ?, 'calls', 'commit-abc')`, aFileID, bNodeID)
-	// Historical edge: a.go → FuncA (commit-abc..commit-def).
+	// Historical edge: a.go â†’ FuncA (commit-abc..commit-def).
 	db.Exec(`INSERT INTO edges(from_id, to_id, kind, valid_from_commit, valid_until_commit) VALUES(?, ?, 'calls', 'commit-abc', 'commit-def')`, aFileID, aNodeID)
 
 	// Anchor on FuncA.

@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"flag"
@@ -6,8 +6,8 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
-	"github.com/Jomruizgo/Engrafo/internal/ui"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/ui"
 )
 
 func cmdUI(cfg *config, args []string) error {
@@ -35,6 +35,6 @@ func cmdUI(cfg *config, args []string) error {
 	}
 
 	srv := ui.NewServer(s)
-	fmt.Fprintf(cfg.stdout, "engrafo ui → http://%s\n", addr)
+	fmt.Fprintf(cfg.stdout, "engrafo ui â†’ http://%s\n", addr)
 	return http.Serve(ln, srv.Handler())
 }

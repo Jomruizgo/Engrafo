@@ -1,11 +1,11 @@
-package workspace_test
+﻿package workspace_test
 
 import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
-	"github.com/Jomruizgo/Engrafo/internal/workspace"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/workspace"
 )
 
 func openStore(t *testing.T) *graph.Store {
@@ -18,11 +18,11 @@ func openStore(t *testing.T) *graph.Store {
 	return s
 }
 
-// TestResolveFileToRoot — test #6: prefijo más largo gana; path fuera de toda raíz → ok=false.
+// TestResolveFileToRoot â€” test #6: prefijo mÃ¡s largo gana; path fuera de toda raÃ­z â†’ ok=false.
 func TestResolveFileToRoot(t *testing.T) {
 	s := openStore(t)
 
-	// Registrar dos raíces con paths anidados (el más largo debe ganar).
+	// Registrar dos raÃ­ces con paths anidados (el mÃ¡s largo debe ganar).
 	_, err := s.UpsertRoot(graph.ResolvedRoot{
 		Name: "workspace", RelPath: ".", AbsRoot: "/repos/ws", VCS: "none",
 	})
@@ -44,21 +44,21 @@ func TestResolveFileToRoot(t *testing.T) {
 		wantOK      bool
 	}{
 		{
-			name:        "prefijo más largo gana",
+			name:        "prefijo mÃ¡s largo gana",
 			absPath:     filepath.FromSlash("/repos/ws/backend/pkg/auth.go"),
 			wantRoot:    "backend",
 			wantRelPath: "pkg/auth.go",
 			wantOK:      true,
 		},
 		{
-			name:        "raíz padre cuando no hay raíz hija que matchee",
+			name:        "raÃ­z padre cuando no hay raÃ­z hija que matchee",
 			absPath:     filepath.FromSlash("/repos/ws/shared/util.go"),
 			wantRoot:    "workspace",
 			wantRelPath: "shared/util.go",
 			wantOK:      true,
 		},
 		{
-			name:    "path fuera de toda raíz → ok=false",
+			name:    "path fuera de toda raÃ­z â†’ ok=false",
 			absPath: filepath.FromSlash("/other/project/main.go"),
 			wantOK:  false,
 		},

@@ -1,4 +1,4 @@
-package mcp_test
+﻿package mcp_test
 
 import (
 	"context"
@@ -8,9 +8,9 @@ import (
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
-	engrafo "github.com/Jomruizgo/Engrafo/internal/mcp"
-	"github.com/Jomruizgo/Engrafo/internal/parser"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
+	engrafo "github.com/Jomruizgo/Engrafo/v2/internal/mcp"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser"
 )
 
 // --- helpers ---

@@ -1,11 +1,11 @@
-package main
+﻿package main
 
 import (
 	"encoding/json"
 	"flag"
 	"fmt"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
 )
 
 func cmdDeadcode(cfg *config, args []string) error {
@@ -40,7 +40,7 @@ func cmdDeadcode(cfg *config, args []string) error {
 		return enc.Encode(result)
 	}
 
-	fmt.Fprintf(cfg.stdout, "orphans (%d — never referenced):\n", len(result.Orphans))
+	fmt.Fprintf(cfg.stdout, "orphans (%d â€” never referenced):\n", len(result.Orphans))
 	for _, o := range result.Orphans {
 		fmt.Fprintf(cfg.stdout, "  %-30s  %s  %s\n", o.Symbol, o.Kind, o.FilePath)
 	}
@@ -48,7 +48,7 @@ func cmdDeadcode(cfg *config, args []string) error {
 		fmt.Fprintf(cfg.stdout, "  (none)\n")
 	}
 
-	fmt.Fprintf(cfg.stdout, "\nabandoned (%d — once referenced, now not):\n", len(result.Abandoned))
+	fmt.Fprintf(cfg.stdout, "\nabandoned (%d â€” once referenced, now not):\n", len(result.Abandoned))
 	for _, a := range result.Abandoned {
 		fmt.Fprintf(cfg.stdout, "  %-30s  %s  %s  peak=%d  days=%.0f\n",
 			a.Symbol, a.Kind, a.FilePath, a.PeakIncomingEdges, a.DaysSinceAbandoned)

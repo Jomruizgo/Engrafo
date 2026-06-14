@@ -1,10 +1,10 @@
-package main
+﻿package main
 
 import (
 	"fmt"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
-	"github.com/Jomruizgo/Engrafo/internal/mcp"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/mcp"
 )
 
 func cmdServe(cfg *config) error {

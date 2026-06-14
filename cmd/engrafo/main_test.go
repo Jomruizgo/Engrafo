@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"bytes"
@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
-	"github.com/Jomruizgo/Engrafo/internal/parser"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser"
 )
 
 func seedTestDB(t *testing.T) string {
@@ -146,7 +146,7 @@ func TestInitFromGitFailsOutsideRepo(t *testing.T) {
 	}
 }
 
-// TestInitAutoRegistersGitRoot — test #3: init en directorio con .git → raíz vcs=git auto-registrada.
+// TestInitAutoRegistersGitRoot â€” test #3: init en directorio con .git â†’ raÃ­z vcs=git auto-registrada.
 func TestInitAutoRegistersGitRoot(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, ".engrafo", "graph.db")
@@ -159,7 +159,7 @@ func TestInitAutoRegistersGitRoot(t *testing.T) {
 
 	var buf bytes.Buffer
 	if err := runWith([]string{"--db", dbPath, "init", dir}, nil, &buf); err != nil {
-		t.Fatalf("init falló: %v\noutput: %s", err, buf.String())
+		t.Fatalf("init fallÃ³: %v\noutput: %s", err, buf.String())
 	}
 
 	s, err := graph.Open(dbPath)
@@ -182,7 +182,7 @@ func TestInitAutoRegistersGitRoot(t *testing.T) {
 		t.Errorf("want name=%q, got %q", filepath.Base(dir), roots[0].Name)
 	}
 
-	// Sin commits reales → currentHEAD devuelve "init" → revision source='init'.
+	// Sin commits reales â†’ currentHEAD devuelve "init" â†’ revision source='init'.
 	var src string
 	if err := s.DB().QueryRow(
 		`SELECT source FROM revisions WHERE root_id=?`, roots[0].ID,
@@ -194,8 +194,8 @@ func TestInitAutoRegistersGitRoot(t *testing.T) {
 	}
 }
 
-// TestVcsNoneUpdateInvalidatesDeletedFile — test #4: vcs=none, update detecta archivo borrado
-// y crea revisión checksum invalidando sus aristas.
+// TestVcsNoneUpdateInvalidatesDeletedFile â€” test #4: vcs=none, update detecta archivo borrado
+// y crea revisiÃ³n checksum invalidando sus aristas.
 func TestVcsNoneUpdateInvalidatesDeletedFile(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, ".engrafo", "graph.db")
@@ -222,8 +222,8 @@ func TestVcsNoneUpdateInvalidatesDeletedFile(t *testing.T) {
 	}
 
 	b := graph.NewBuilder(s)
-	// Seed: main.go llama a dos símbolos → 2 aristas activas.
-	// main.go NO existe en disco → update lo detecta como borrado.
+	// Seed: main.go llama a dos sÃ­mbolos â†’ 2 aristas activas.
+	// main.go NO existe en disco â†’ update lo detecta como borrado.
 	if err := b.UpsertFile(rootID, initRevID, "fakechecksum", &parser.Result{
 		Nodes: []parser.Node{
 			{Symbol: "doWork", Kind: "function", FilePath: "main.go", Language: "go"},
@@ -248,10 +248,10 @@ func TestVcsNoneUpdateInvalidatesDeletedFile(t *testing.T) {
 	}
 	s2.Close()
 
-	// CLI: update — main.go no está en disco → detectado como borrado.
+	// CLI: update â€” main.go no estÃ¡ en disco â†’ detectado como borrado.
 	var buf bytes.Buffer
 	if err := runWith([]string{"--db", dbPath, "update"}, nil, &buf); err != nil {
-		t.Fatalf("update falló: %v\noutput: %s", err, buf.String())
+		t.Fatalf("update fallÃ³: %v\noutput: %s", err, buf.String())
 	}
 
 	s3, _ := graph.Open(dbPath)
@@ -264,7 +264,7 @@ func TestVcsNoneUpdateInvalidatesDeletedFile(t *testing.T) {
 		t.Errorf("want 2 revisions (init + checksum), got %d", revCount)
 	}
 
-	// Segunda revisión debe ser source='checksum'.
+	// Segunda revisiÃ³n debe ser source='checksum'.
 	var csSource string
 	s3.DB().QueryRow(
 		`SELECT source FROM revisions WHERE root_id=? ORDER BY id DESC LIMIT 1`, rootID,
@@ -280,7 +280,7 @@ func TestVcsNoneUpdateInvalidatesDeletedFile(t *testing.T) {
 		t.Errorf("want 0 active edges after main.go deleted, got %d", activeAfter)
 	}
 
-	// valid_until_rev de las aristas debe apuntar a la revisión checksum.
+	// valid_until_rev de las aristas debe apuntar a la revisiÃ³n checksum.
 	var csRevID int64
 	s3.DB().QueryRow(
 		`SELECT id FROM revisions WHERE root_id=? AND source='checksum' LIMIT 1`, rootID,

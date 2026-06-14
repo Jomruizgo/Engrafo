@@ -1,8 +1,8 @@
-//go:build cgo
+﻿//go:build cgo
 
 package engrafo_test
 
-// Integration tests for v1.0 success criteria (PRD section "Criterios de éxito").
+// Integration tests for v1.0 success criteria (PRD section "Criterios de Ã©xito").
 // These tests cross package boundaries to verify end-to-end data flow.
 // Require CGO (tree-sitter parser extractors).
 
@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
-	"github.com/Jomruizgo/Engrafo/internal/parser"
-	"github.com/Jomruizgo/Engrafo/internal/parser/extractors"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser/extractors"
 )
 
 func openIntegrationStore(t *testing.T) *graph.Store {
@@ -25,7 +25,7 @@ func openIntegrationStore(t *testing.T) *graph.Store {
 	return s
 }
 
-// TestBitemporalEdgeInvalidation — PRD criterion 6:
+// TestBitemporalEdgeInvalidation â€” PRD criterion 6:
 // after removing a dependency in a later commit, Dependents() returns nothing,
 // but NodeInfo(include_invalidated=true) exposes the historical edge.
 func TestBitemporalEdgeInvalidation(t *testing.T) {
@@ -64,7 +64,7 @@ func TestBitemporalEdgeInvalidation(t *testing.T) {
 
 	q := graph.NewQuerier(s)
 
-	// Act: active query — edge must be invisible
+	// Act: active query â€” edge must be invisible
 	deps, err := q.Dependents("user.go")
 	if err != nil {
 		t.Fatalf("Dependents: %v", err)
@@ -75,7 +75,7 @@ func TestBitemporalEdgeInvalidation(t *testing.T) {
 		t.Errorf("want 0 active dependents after invalidation, got %d", len(deps))
 	}
 
-	// Act: historical query — the edge originates from the file node "server.go",
+	// Act: historical query â€” the edge originates from the file node "server.go",
 	// so query NodeInfo on the file node (FromSymbol in edges is always the file path).
 	result, err := q.NodeInfo("server.go", "file", true)
 	if err != nil {
@@ -91,7 +91,7 @@ func TestBitemporalEdgeInvalidation(t *testing.T) {
 	}
 }
 
-// TestParserFixturesProduceNodes — PRD criterion 2:
+// TestParserFixturesProduceNodes â€” PRD criterion 2:
 // verifies that the three supported languages produce expected node types from fixture files.
 func TestParserFixturesProduceNodes(t *testing.T) {
 	p := parser.New(
@@ -133,8 +133,8 @@ func TestParserFixturesProduceNodes(t *testing.T) {
 	}
 }
 
-// TestEndToEndInitAndQuery — PRD criterion 2:
-// full pipeline: parse real fixture → build graph → NodeInfo resolves correctly.
+// TestEndToEndInitAndQuery â€” PRD criterion 2:
+// full pipeline: parse real fixture â†’ build graph â†’ NodeInfo resolves correctly.
 func TestEndToEndInitAndQuery(t *testing.T) {
 	// Arrange
 	s := openIntegrationStore(t)
@@ -171,7 +171,7 @@ func TestEndToEndInitAndQuery(t *testing.T) {
 	}
 }
 
-// TestContextReflectsIndexedData — PRD criterion 2:
+// TestContextReflectsIndexedData â€” PRD criterion 2:
 // verifies cg_context returns correct counts after indexing.
 func TestContextReflectsIndexedData(t *testing.T) {
 	// Arrange
@@ -195,7 +195,7 @@ func TestContextReflectsIndexedData(t *testing.T) {
 
 	// Assert
 	if ctx.TotalNodes < 3 {
-		t.Errorf("want ≥3 nodes, got %d", ctx.TotalNodes)
+		t.Errorf("want â‰¥3 nodes, got %d", ctx.TotalNodes)
 	}
 	if len(ctx.Languages) == 0 {
 		t.Error("want at least one language in context, got none")

@@ -1,10 +1,10 @@
-package graph
+﻿package graph
 
 import (
 	"database/sql"
 	"fmt"
 
-	"github.com/Jomruizgo/Engrafo/internal/parser"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser"
 )
 
 // Builder builds and updates the graph from parsed source files.
@@ -101,7 +101,7 @@ func (b *Builder) UpsertFile(rootID, revID int64, fileChecksum string, result *p
 			return fmt.Errorf("resolve target %s: %w", e.ToSymbol, err)
 		}
 		if err := insertEdge(tx, fileNodeID, toID, e.Kind, revID); err != nil {
-			return fmt.Errorf("insert edge %s→%s: %w", filePath, e.ToSymbol, err)
+			return fmt.Errorf("insert edge %sâ†’%s: %w", filePath, e.ToSymbol, err)
 		}
 	}
 
@@ -109,7 +109,7 @@ func (b *Builder) UpsertFile(rootID, revID int64, fileChecksum string, result *p
 }
 
 // InvalidateFile invalida todas las aristas activas del nodo file correspondiente a relPath
-// en la raíz rootID. Se usa cuando un archivo fue eliminado en una raíz vcs=none.
+// en la raÃ­z rootID. Se usa cuando un archivo fue eliminado en una raÃ­z vcs=none.
 func (b *Builder) InvalidateFile(rootID, revID int64, relPath string) error {
 	tx, err := b.store.db.Begin()
 	if err != nil {
@@ -123,7 +123,7 @@ func (b *Builder) InvalidateFile(rootID, revID int64, relPath string) error {
 		rootID, relPath,
 	).Scan(&fileNodeID)
 	if err == sql.ErrNoRows {
-		return nil // file node no existe → nada que invalidar
+		return nil // file node no existe â†’ nada que invalidar
 	}
 	if err != nil {
 		return fmt.Errorf("find file node %s: %w", relPath, err)
@@ -153,7 +153,7 @@ func (b *Builder) SetMeta(key, value string) error {
 // ---- helpers ----
 
 // upsertNode inserts or updates a node and returns its ID.
-// Always SELECT after UPSERT — LastInsertId is unreliable for ON CONFLICT DO UPDATE.
+// Always SELECT after UPSERT â€” LastInsertId is unreliable for ON CONFLICT DO UPDATE.
 func upsertNode(tx *sql.Tx, rootID int64, symbol, kind, filePath string, lineStart, lineEnd int, language, checksum string) (int64, error) {
 	var csNullable interface{}
 	if checksum != "" {

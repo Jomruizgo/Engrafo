@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"flag"
@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
-	"github.com/Jomruizgo/Engrafo/internal/parser"
-	"github.com/Jomruizgo/Engrafo/internal/parser/extractors"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser/extractors"
 )
 
 // skipDirs are directory names that are never indexed.
@@ -142,7 +142,7 @@ func initFull(cfg *config, root, dbPath string) error {
 	db.Exec(`INSERT OR REPLACE INTO index_meta(key,value) VALUES('indexed_at',datetime('now'))`)
 	s.SetRootIndexed(rootID, commitHash)
 
-	fmt.Fprintf(cfg.stdout, "indexed %d files (%d skipped) — db: %s\n", indexed, skipped, dbPath)
+	fmt.Fprintf(cfg.stdout, "indexed %d files (%d skipped) â€” db: %s\n", indexed, skipped, dbPath)
 	return nil
 }
 
@@ -237,7 +237,7 @@ func initFromGit(cfg *config, root, dbPath string, n int) error {
 	db.Exec(`INSERT OR REPLACE INTO index_meta(key,value) VALUES('indexed_at',datetime('now'))`)
 	s.SetRootIndexed(rootID, headHash)
 
-	fmt.Fprintf(cfg.stdout, "replayed %d commits, %d file-versions — db: %s\n",
+	fmt.Fprintf(cfg.stdout, "replayed %d commits, %d file-versions â€” db: %s\n",
 		len(hashes), totalFiles, dbPath)
 	return nil
 }
@@ -271,7 +271,7 @@ func detectVCS(root string) string {
 	return "none"
 }
 
-// initRoot indexa una sola raíz resuelta: UpsertRoot, revisión inicial, walk + parse + upsert.
+// initRoot indexa una sola raÃ­z resuelta: UpsertRoot, revisiÃ³n inicial, walk + parse + upsert.
 // Compartida por workspace add e initFull.
 func initRoot(cfg *config, s *graph.Store, resolved graph.ResolvedRoot) error {
 	rootID, err := s.UpsertRoot(resolved)

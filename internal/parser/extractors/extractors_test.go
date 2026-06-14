@@ -1,4 +1,4 @@
-//go:build cgo
+﻿//go:build cgo
 
 package extractors_test
 
@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Jomruizgo/Engrafo/internal/parser"
-	"github.com/Jomruizgo/Engrafo/internal/parser/extractors"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser/extractors"
 )
 
 // nodePresent returns true if result contains a node with the given symbol and kind.

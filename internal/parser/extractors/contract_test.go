@@ -1,4 +1,4 @@
-//go:build cgo
+﻿//go:build cgo
 
 package extractors_test
 
@@ -9,8 +9,8 @@ package extractors_test
 import (
 	"testing"
 
-	"github.com/Jomruizgo/Engrafo/internal/parser"
-	"github.com/Jomruizgo/Engrafo/internal/parser/extractors"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser/extractors"
 )
 
 func TestExtractorContract(t *testing.T) {

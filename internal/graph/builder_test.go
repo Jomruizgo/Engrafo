@@ -1,11 +1,11 @@
-package graph_test
+﻿package graph_test
 
 import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
-	"github.com/Jomruizgo/Engrafo/internal/parser"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser"
 )
 
 // openTestStore creates a fresh Store in a temp dir for testing.
@@ -155,7 +155,7 @@ func TestBuilderResolvesEdgeToKnownNode(t *testing.T) {
 	}
 }
 
-// TestCrossRootIsolation — test #2: dos raíces con mismo file_path y symbol no colisionan.
+// TestCrossRootIsolation â€” test #2: dos raÃ­ces con mismo file_path y symbol no colisionan.
 func TestCrossRootIsolation(t *testing.T) {
 	s := openTestStore(t)
 
@@ -183,7 +183,7 @@ func TestCrossRootIsolation(t *testing.T) {
 
 	b := graph.NewBuilder(s)
 
-	// Mismos file_path + symbol en ambas raíces.
+	// Mismos file_path + symbol en ambas raÃ­ces.
 	shared := &parser.Result{
 		Nodes: []parser.Node{
 			{Symbol: "Process", Kind: "function", FilePath: "main.go", Language: "go"},
@@ -201,14 +201,14 @@ func TestCrossRootIsolation(t *testing.T) {
 
 	db := s.DB()
 
-	// Deben existir 2 nodos con symbol='Process' (uno por raíz).
+	// Deben existir 2 nodos con symbol='Process' (uno por raÃ­z).
 	var processCount int
 	db.QueryRow(`SELECT COUNT(*) FROM nodes WHERE symbol='Process' AND kind='function'`).Scan(&processCount)
 	if processCount != 2 {
 		t.Errorf("want 2 'Process' nodes (one per root), got %d", processCount)
 	}
 
-	// Cada raíz debe tener exactamente 1 nodo 'Process'.
+	// Cada raÃ­z debe tener exactamente 1 nodo 'Process'.
 	var inA, inB int
 	db.QueryRow(`SELECT COUNT(*) FROM nodes WHERE symbol='Process' AND root_id=?`, rootA).Scan(&inA)
 	db.QueryRow(`SELECT COUNT(*) FROM nodes WHERE symbol='Process' AND root_id=?`, rootB).Scan(&inB)
@@ -219,7 +219,7 @@ func TestCrossRootIsolation(t *testing.T) {
 		t.Errorf("root-b: want 1 'Process' node, got %d", inB)
 	}
 
-	// Las aristas de la raíz A deben apuntar solo a nodos de la raíz A.
+	// Las aristas de la raÃ­z A deben apuntar solo a nodos de la raÃ­z A.
 	var crossEdges int
 	db.QueryRow(`
 		SELECT COUNT(*) FROM edges e
@@ -231,7 +231,7 @@ func TestCrossRootIsolation(t *testing.T) {
 		t.Errorf("cross-root edges must be 0, got %d", crossEdges)
 	}
 
-	// Verificar que resolveOrCreateNode no crea external stubs cross-raíz:
+	// Verificar que resolveOrCreateNode no crea external stubs cross-raÃ­z:
 	// el nodo 'Process' de rootA debe resolverse a id de rootA, no de rootB.
 	var idA, idB int64
 	db.QueryRow(`SELECT id FROM nodes WHERE symbol='Process' AND root_id=?`, rootA).Scan(&idA)
@@ -282,7 +282,7 @@ func TestBuilderInvalidateFile(t *testing.T) {
 		t.Fatalf("want 2 active edges before invalidation, got %d", activeCount)
 	}
 
-	// Eliminar el archivo → invalidar todas sus aristas.
+	// Eliminar el archivo â†’ invalidar todas sus aristas.
 	if err := b.InvalidateFile(rootID, revDel, "caller.go"); err != nil {
 		t.Fatalf("InvalidateFile: %v", err)
 	}

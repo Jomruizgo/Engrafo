@@ -1,4 +1,4 @@
-package hooks_test
+﻿package hooks_test
 
 import (
 	"encoding/json"
@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
-	"github.com/Jomruizgo/Engrafo/internal/hooks"
-	"github.com/Jomruizgo/Engrafo/internal/parser"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/hooks"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser"
 )
 
 func openTestStore(t *testing.T) *graph.Store {

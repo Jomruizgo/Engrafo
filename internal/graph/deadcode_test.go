@@ -1,16 +1,16 @@
-package graph_test
+﻿package graph_test
 
 import (
 	"testing"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
-	"github.com/Jomruizgo/Engrafo/internal/parser"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser"
 )
 
 // seedDeadcodeGraph builds a graph with:
-//   - "orphan"    — function that never had incoming edges
-//   - "used"      — function with an active incoming edge
-//   - "abandoned" — function that had incoming edges in commit-A, none in commit-B
+//   - "orphan"    â€” function that never had incoming edges
+//   - "used"      â€” function with an active incoming edge
+//   - "abandoned" â€” function that had incoming edges in commit-A, none in commit-B
 func seedDeadcodeGraph(t *testing.T, s *graph.Store) {
 	t.Helper()
 	rootID := testSeedRoot(t, s)
@@ -73,7 +73,7 @@ func TestDeadcodeOrphans(t *testing.T) {
 
 	for _, o := range result.Orphans {
 		if o.Symbol == "used" {
-			t.Errorf("'used' must not be in orphans — it has an active incoming edge")
+			t.Errorf("'used' must not be in orphans â€” it has an active incoming edge")
 		}
 	}
 }
@@ -107,7 +107,7 @@ func TestDeadcodeAbandoned(t *testing.T) {
 
 	for _, a := range result.Abandoned {
 		if a.Symbol == "used" {
-			t.Errorf("'used' must not be in abandoned — it has an active incoming edge")
+			t.Errorf("'used' must not be in abandoned â€” it has an active incoming edge")
 		}
 	}
 }

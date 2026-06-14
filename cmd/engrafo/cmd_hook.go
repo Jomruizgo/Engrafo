@@ -1,13 +1,13 @@
-package main
+﻿package main
 
 import (
 	"encoding/json"
 	"fmt"
 	"io"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
-	"github.com/Jomruizgo/Engrafo/internal/hooks"
-	"github.com/Jomruizgo/Engrafo/internal/workspace"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/hooks"
+	"github.com/Jomruizgo/Engrafo/v2/internal/workspace"
 )
 
 // hookEvent is the JSON payload Claude Code sends to hook stdin.

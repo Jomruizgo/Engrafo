@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"flag"
@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"text/tabwriter"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
-	"github.com/Jomruizgo/Engrafo/internal/workspace"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/workspace"
 )
 
 // cmdWorkspace maneja los subcomandos workspace add/list/remove.
@@ -24,11 +24,11 @@ func cmdWorkspace(cfg *config, args []string) error {
 	case "remove":
 		return cmdWorkspaceRemove(cfg, args[1:])
 	default:
-		return fmt.Errorf("subcomando desconocido %q — usa: add, list, remove", args[0])
+		return fmt.Errorf("subcomando desconocido %q â€” usa: add, list, remove", args[0])
 	}
 }
 
-// cmdWorkspaceAdd agrega una raíz al manifest y la indexa inmediatamente.
+// cmdWorkspaceAdd agrega una raÃ­z al manifest y la indexa inmediatamente.
 func cmdWorkspaceAdd(cfg *config, args []string) error {
 	fs2 := flag.NewFlagSet("workspace add", flag.ContinueOnError)
 	remote := fs2.String("remote", "", "URL remote del repo")
@@ -70,7 +70,7 @@ func cmdWorkspaceAdd(cfg *config, args []string) error {
 
 	for _, r := range m.Roots {
 		if r.Name == name {
-			return fmt.Errorf("ya existe una raíz con nombre %q", name)
+			return fmt.Errorf("ya existe una raÃ­z con nombre %q", name)
 		}
 	}
 
@@ -83,7 +83,7 @@ func cmdWorkspaceAdd(cfg *config, args []string) error {
 	}
 	resolved, err := spec.Resolve(wsDir)
 	if err != nil {
-		return fmt.Errorf("resolver raíz: %w", err)
+		return fmt.Errorf("resolver raÃ­z: %w", err)
 	}
 
 	m.Roots = append(m.Roots, spec)
@@ -101,11 +101,11 @@ func cmdWorkspaceAdd(cfg *config, args []string) error {
 		return fmt.Errorf("indexar %s: %w", name, err)
 	}
 
-	fmt.Fprintf(cfg.stdout, "raíz %q agregada y indexada (%s)\n", name, resolved.AbsRoot)
+	fmt.Fprintf(cfg.stdout, "raÃ­z %q agregada y indexada (%s)\n", name, resolved.AbsRoot)
 	return nil
 }
 
-// cmdWorkspaceList muestra las raíces registradas con estadísticas básicas.
+// cmdWorkspaceList muestra las raÃ­ces registradas con estadÃ­sticas bÃ¡sicas.
 func cmdWorkspaceList(cfg *config) error {
 	dbPath, err := cfg.resolveDB()
 	if err != nil {
@@ -122,7 +122,7 @@ func cmdWorkspaceList(cfg *config) error {
 		return fmt.Errorf("all roots: %w", err)
 	}
 	if len(roots) == 0 {
-		fmt.Fprintln(cfg.stdout, "(sin raíces — ejecuta 'engrafo workspace add' o 'engrafo init')")
+		fmt.Fprintln(cfg.stdout, "(sin raÃ­ces â€” ejecuta 'engrafo workspace add' o 'engrafo init')")
 		return nil
 	}
 
@@ -140,7 +140,7 @@ func cmdWorkspaceList(cfg *config) error {
 		}
 		indexed := r.IndexedAt
 		if indexed == "" {
-			indexed = "—"
+			indexed = "â€”"
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%s\n",
 			r.Name, r.RelPath, r.VCS, remote, nodeCount, indexed)
@@ -149,7 +149,7 @@ func cmdWorkspaceList(cfg *config) error {
 	return nil
 }
 
-// cmdWorkspaceRemove elimina una raíz del manifest y de la DB (cascade).
+// cmdWorkspaceRemove elimina una raÃ­z del manifest y de la DB (cascade).
 func cmdWorkspaceRemove(cfg *config, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("uso: engrafo workspace remove <name>")
@@ -176,7 +176,7 @@ func cmdWorkspaceRemove(cfg *config, args []string) error {
 			filtered = append(filtered, r)
 		}
 		if !found {
-			return fmt.Errorf("raíz %q no encontrada en el manifest", name)
+			return fmt.Errorf("raÃ­z %q no encontrada en el manifest", name)
 		}
 		m.Roots = filtered
 		if err := workspace.Save(cfg.manifestPath, m); err != nil {
@@ -202,9 +202,9 @@ func cmdWorkspaceRemove(cfg *config, args []string) error {
 	}
 	affected, _ := res.RowsAffected()
 	if affected == 0 {
-		return fmt.Errorf("raíz %q no encontrada en la DB", name)
+		return fmt.Errorf("raÃ­z %q no encontrada en la DB", name)
 	}
 
-	fmt.Fprintf(cfg.stdout, "raíz %q eliminada (%d nodos borrados)\n", name, nodeCount)
+	fmt.Fprintf(cfg.stdout, "raÃ­z %q eliminada (%d nodos borrados)\n", name, nodeCount)
 	return nil
 }
