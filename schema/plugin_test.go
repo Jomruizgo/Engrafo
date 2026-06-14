@@ -1,11 +1,11 @@
-package schema_test
+﻿package schema_test
 
 import (
 	"encoding/json"
 	"os"
 	"testing"
 
-	"github.com/Jomruizgo/Engrafo/internal/version"
+	"github.com/Jomruizgo/Engrafo/v2/internal/version"
 )
 
 // requiredPluginFields are the top-level keys that plugin.json must contain.
@@ -79,7 +79,7 @@ func TestPluginJSONVersionMatchesCode(t *testing.T) {
 	}
 	got, _ := m["version"].(string)
 	if got != version.Current {
-		t.Errorf("plugin.json version %q != internal/version.Current %q — update one to match the other", got, version.Current)
+		t.Errorf("plugin.json version %q != internal/version.Current %q â€” update one to match the other", got, version.Current)
 	}
 }
 

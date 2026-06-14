@@ -1,4 +1,4 @@
-// Package hooks contains Claude Code hook handlers.
+﻿// Package hooks contains Claude Code hook handlers.
 // Hooks never block (exit code always 0) and inject systemMessage context via stdout JSON.
 package hooks
 
@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
 )
 
 // SessionStartMessage returns the systemMessage to inject at session start.
-// Single-root: compact summary. Multi-root: una línea por raíz con remote y conteos.
+// Single-root: compact summary. Multi-root: una lÃ­nea por raÃ­z con remote y conteos.
 // Returns "" on error (hook silently skips).
 func SessionStartMessage(q *graph.Querier) string {
 	ctx, err := q.Context()
@@ -24,7 +24,7 @@ func SessionStartMessage(q *graph.Querier) string {
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "[engrafo] Workspace: %d raíz(es) SEPARADAS (no monorepo).\n", len(ctx.Roots))
+	fmt.Fprintf(&sb, "[engrafo] Workspace: %d raÃ­z(es) SEPARADAS (no monorepo).\n", len(ctx.Roots))
 	for _, r := range ctx.Roots {
 		remote := r.Remote
 		if remote == "" {
@@ -32,12 +32,12 @@ func SessionStartMessage(q *graph.Querier) string {
 		}
 		langs := strings.Join(r.Languages, ",")
 		if langs == "" {
-			langs = "—"
+			langs = "â€”"
 		}
-		fmt.Fprintf(&sb, "- %s  %s  %s  %d símbolos  %s\n",
+		fmt.Fprintf(&sb, "- %s  %s  %s  %d sÃ­mbolos  %s\n",
 			r.Name, r.Path, remote, r.TotalNodes, langs)
 	}
-	sb.WriteString("Cada raíz tiene su propio control de versiones. " +
-		"Para commit/push: cd a la ruta de la raíz y opera ahí.")
+	sb.WriteString("Cada raÃ­z tiene su propio control de versiones. " +
+		"Para commit/push: cd a la ruta de la raÃ­z y opera ahÃ­.")
 	return sb.String()
 }

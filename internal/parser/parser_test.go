@@ -1,4 +1,4 @@
-//go:build cgo
+﻿//go:build cgo
 
 package parser_test
 
@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Jomruizgo/Engrafo/internal/parser"
-	"github.com/Jomruizgo/Engrafo/internal/parser/extractors"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser/extractors"
 )
 
 func newTestParser() *parser.Parser {

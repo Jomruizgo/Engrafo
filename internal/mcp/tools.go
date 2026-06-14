@@ -1,4 +1,4 @@
-package mcp
+﻿package mcp
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
 )
 
 // Tool names exposed by the MCP server.
@@ -75,7 +75,7 @@ func (h *Handlers) CGContext(_ context.Context, _ mcplib.CallToolRequest) (*mcpl
 }
 
 // CGNode implements cg_node: returns full details for a single symbol.
-// Optional param: root (string) — restrict to that root.
+// Optional param: root (string) â€” restrict to that root.
 func (h *Handlers) CGNode(_ context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	args := req.GetArguments()
 	symbol, _ := args["symbol"].(string)
@@ -218,7 +218,7 @@ func (h *Handlers) CGAnchor(_ context.Context, req mcplib.CallToolRequest) (*mcp
 
 // CGDeadcode implements the cg_deadcode MCP tool (v1.1).
 // Returns orphan nodes (never referenced) and abandoned nodes (once referenced, now not).
-// Optional param: root (string) — filter by root.
+// Optional param: root (string) â€” filter by root.
 func (h *Handlers) CGDeadcode(_ context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	args := req.GetArguments()
 	thresholdDays := 0

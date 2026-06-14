@@ -1,9 +1,9 @@
-package hooks
+﻿package hooks
 
 import (
 	"fmt"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
 )
 
 // PreReadMessage returns the systemMessage to inject before a Read tool call.
@@ -15,8 +15,8 @@ func PreReadMessage(q *graph.Querier, filePath, rootName string) string {
 		return ""
 	}
 	if rootName != "" {
-		return fmt.Sprintf("[engrafo] %s en %s: %d dependiente(s) — editar puede romper llamadores",
+		return fmt.Sprintf("[engrafo] %s en %s: %d dependiente(s) â€” editar puede romper llamadores",
 			filePath, rootName, len(deps))
 	}
-	return fmt.Sprintf("[engrafo] %s has %d dependent(s) — edits may break callers", filePath, len(deps))
+	return fmt.Sprintf("[engrafo] %s has %d dependent(s) â€” edits may break callers", filePath, len(deps))
 }

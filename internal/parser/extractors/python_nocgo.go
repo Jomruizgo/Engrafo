@@ -1,11 +1,11 @@
-//go:build !cgo
+﻿//go:build !cgo
 
 package extractors
 
 import (
 	"errors"
 
-	"github.com/Jomruizgo/Engrafo/internal/parser"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser"
 )
 
 // PythonExtractor stub for non-CGO builds.

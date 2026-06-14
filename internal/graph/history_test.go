@@ -1,18 +1,18 @@
-package graph_test
+﻿package graph_test
 
 import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
-	"github.com/Jomruizgo/Engrafo/internal/parser"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser"
 )
 
 // seedHistoryGraph creates a node whose edges change across commits.
 //
-// commit-A: caller → [dep1, dep2]
-// commit-B: caller → [dep1]        (dep2 disappeared)
-// commit-C: caller → [dep1, dep3]  (dep3 appeared)
+// commit-A: caller â†’ [dep1, dep2]
+// commit-B: caller â†’ [dep1]        (dep2 disappeared)
+// commit-C: caller â†’ [dep1, dep3]  (dep3 appeared)
 func seedHistoryGraph(t *testing.T) *graph.Store {
 	t.Helper()
 	dir := t.TempDir()

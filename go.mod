@@ -1,4 +1,4 @@
-module github.com/Jomruizgo/Engrafo
+module github.com/Jomruizgo/Engrafo/v2
 
 go 1.25.5
 

@@ -1,5 +1,5 @@
-// Package graph manages the SQLite-backed dependency graph.
-// Schema: schema/schema.sql — bi-temporal edges (never deleted, only invalidated).
+﻿// Package graph manages the SQLite-backed dependency graph.
+// Schema: schema/schema.sql â€” bi-temporal edges (never deleted, only invalidated).
 package graph
 
 import (
@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Jomruizgo/Engrafo/schema"
+	"github.com/Jomruizgo/Engrafo/v2/schema"
 )
 
 // SchemaVersion is the current schema version; incremented with each migration.
@@ -250,7 +250,7 @@ func (s *Store) migrate() error {
 
 	switch {
 	case err != nil:
-		// No schema_version table → fresh DB: create full v2 schema.
+		// No schema_version table â†’ fresh DB: create full v2 schema.
 		if _, err := s.db.Exec(schema.SQL); err != nil {
 			return fmt.Errorf("create schema: %w", err)
 		}
@@ -261,13 +261,13 @@ func (s *Store) migrate() error {
 		return nil
 
 	case current == 1:
-		// v1 → v2: structural migration (commit hashes → revision IDs).
+		// v1 â†’ v2: structural migration (commit hashes â†’ revision IDs).
 		return s.migrateV1ToV2()
 
 	case current < SchemaVersion:
 		// Any other old version: create missing tables (IF NOT EXISTS) then bump.
 		if _, err := s.db.Exec(schema.SQL); err != nil {
-			return fmt.Errorf("migration v%d→v%d: %w", current, SchemaVersion, err)
+			return fmt.Errorf("migration v%dâ†’v%d: %w", current, SchemaVersion, err)
 		}
 		_, err = s.db.Exec("INSERT OR REPLACE INTO schema_version(version) VALUES(?)", SchemaVersion)
 		return err
@@ -277,8 +277,8 @@ func (s *Store) migrate() error {
 	}
 }
 
-// migrateV1ToV2 performs the structural v1→v2 migration.
-// Steps per §5 of plan-v2.0-multi-repo.md.
+// migrateV1ToV2 performs the structural v1â†’v2 migration.
+// Steps per Â§5 of plan-v2.0-multi-repo.md.
 func (s *Store) migrateV1ToV2() error {
 	// PRAGMA foreign_keys cannot be changed inside a transaction.
 	if _, err := s.db.Exec("PRAGMA foreign_keys = OFF"); err != nil {
@@ -432,7 +432,7 @@ func (s *Store) migrateV1ToV2() error {
 		return fmt.Errorf("create nodes root index: %w", err)
 	}
 
-	// Step 5: Rebuild edges table (TEXT commit cols → INTEGER rev FK cols).
+	// Step 5: Rebuild edges table (TEXT commit cols â†’ INTEGER rev FK cols).
 	if _, err := tx.Exec(`CREATE TABLE edges_new (
 		id                 INTEGER PRIMARY KEY AUTOINCREMENT,
 		from_id            INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,

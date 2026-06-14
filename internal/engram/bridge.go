@@ -1,8 +1,8 @@
-// Package engram bridges engrafo with engram memory observations.
+﻿// Package engram bridges engrafo with engram memory observations.
 // Full implementation: feature/hooks.
 package engram
 
-import "github.com/Jomruizgo/Engrafo/internal/graph"
+import "github.com/Jomruizgo/Engrafo/v2/internal/graph"
 
 // Bridge links engram observations to graph nodes.
 type Bridge struct {

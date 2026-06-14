@@ -1,4 +1,4 @@
-//go:build cgo
+﻿//go:build cgo
 
 package extractors
 
@@ -9,7 +9,7 @@ import (
 	tree_sitter "github.com/tree-sitter/go-tree-sitter"
 	tree_sitter_python "github.com/tree-sitter/tree-sitter-python/bindings/go"
 
-	"github.com/Jomruizgo/Engrafo/internal/parser"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser"
 )
 
 // PythonExtractor extracts nodes and edges from Python source files using tree-sitter.
@@ -91,7 +91,7 @@ func (e *PythonExtractor) Extract(filePath string, source []byte) (*parser.Resul
 		})
 	}
 
-	// from X import Y → edge to X
+	// from X import Y â†’ edge to X
 	for _, cap := range queryAll(lang, root, source,
 		`(import_from_statement module_name: (dotted_name) @mod)`, "mod") {
 		parts := strings.Split(cap.text, ".")

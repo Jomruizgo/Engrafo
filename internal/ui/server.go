@@ -1,4 +1,4 @@
-// Package ui serves the engrafo graph browser over HTTP (localhost only).
+﻿// Package ui serves the engrafo graph browser over HTTP (localhost only).
 package ui
 
 import (
@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
 )
 
 //go:embed static

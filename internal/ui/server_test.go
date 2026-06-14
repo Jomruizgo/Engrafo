@@ -1,4 +1,4 @@
-package ui_test
+﻿package ui_test
 
 import (
 	"encoding/json"
@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
-	"github.com/Jomruizgo/Engrafo/internal/parser"
-	"github.com/Jomruizgo/Engrafo/internal/ui"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser"
+	"github.com/Jomruizgo/Engrafo/v2/internal/ui"
 )
 
 func openSeededStore(t *testing.T) *graph.Store {
@@ -201,7 +201,7 @@ func TestUINotFoundReturns404(t *testing.T) {
 	}
 }
 
-// TestUIGraphEndpoint — test #8: shape correcto, external excluido, ?root= filtra.
+// TestUIGraphEndpoint â€” test #8: shape correcto, external excluido, ?root= filtra.
 func TestUIGraphEndpoint(t *testing.T) {
 	dir := t.TempDir()
 	s, err := graph.Open(filepath.Join(dir, "graph.db"))
@@ -220,17 +220,17 @@ func TestUIGraphEndpoint(t *testing.T) {
 	revB, _ := s.CreateRevision(rootB, "init", "")
 	b := graph.NewBuilder(s)
 
-	// svc-a: api.go → Handler; también tiene arista hacia nodo externo (debe excluirse)
+	// svc-a: api.go â†’ Handler; tambiÃ©n tiene arista hacia nodo externo (debe excluirse)
 	b.UpsertFile(rootA, revA, "", &parser.Result{
 		Nodes: []parser.Node{
 			{Symbol: "Handler", Kind: "function", FilePath: "api.go", Language: "go"},
 		},
 		Edges: []parser.Edge{
 			{FromSymbol: "api.go", ToSymbol: "Handler", Kind: "calls"},
-			{FromSymbol: "api.go", ToSymbol: "fmt", Kind: "imports"}, // fmt será external
+			{FromSymbol: "api.go", ToSymbol: "fmt", Kind: "imports"}, // fmt serÃ¡ external
 		},
 	})
-	// svc-b: worker.go → Worker
+	// svc-b: worker.go â†’ Worker
 	b.UpsertFile(rootB, revB, "", &parser.Result{
 		Nodes: []parser.Node{
 			{Symbol: "Worker", Kind: "function", FilePath: "worker.go", Language: "go"},
@@ -272,7 +272,7 @@ func TestUIGraphEndpoint(t *testing.T) {
 		}
 	})
 
-	t.Run("?root= filtra solo esa raíz", func(t *testing.T) {
+	t.Run("?root= filtra solo esa raÃ­z", func(t *testing.T) {
 		w := doGet(t, h, "/api/graph?root=svc-a")
 		if w.Code != http.StatusOK {
 			t.Fatalf("want 200, got %d", w.Code)

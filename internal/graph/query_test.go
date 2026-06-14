@@ -1,16 +1,16 @@
-package graph_test
+﻿package graph_test
 
 import (
 	"testing"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
-	"github.com/Jomruizgo/Engrafo/internal/parser"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser"
 )
 
 // seedGraph creates a minimal two-file graph:
 //
-//	user.go   — package "user", struct "UserService"
-//	server.go — package "server", imports "user"
+//	user.go   â€” package "user", struct "UserService"
+//	server.go â€” package "server", imports "user"
 func seedGraph(t *testing.T, s *graph.Store) *graph.Builder {
 	t.Helper()
 	rootID := testSeedRoot(t, s)
@@ -185,11 +185,11 @@ func TestQuerierContext(t *testing.T) {
 	}
 }
 
-// TestQuerierRootScoping — test #7: con/sin rootName; campo Root poblado.
+// TestQuerierRootScoping â€” test #7: con/sin rootName; campo Root poblado.
 func TestQuerierRootScoping(t *testing.T) {
 	s := openTestStore(t)
 
-	// Crear dos raíces con el mismo file_path y distintos símbolos.
+	// Crear dos raÃ­ces con el mismo file_path y distintos sÃ­mbolos.
 	rootA, err := s.UpsertRoot(graph.ResolvedRoot{
 		Name: "svc-a", RelPath: ".", AbsRoot: "/a", VCS: "none",
 	})
@@ -226,7 +226,7 @@ func TestQuerierRootScoping(t *testing.T) {
 
 	q := graph.NewQuerier(s)
 
-	t.Run("sin rootName: devuelve resultados de ambas raíces", func(t *testing.T) {
+	t.Run("sin rootName: devuelve resultados de ambas raÃ­ces", func(t *testing.T) {
 		results, err := q.Search("Handler", 10, "")
 		if err != nil {
 			t.Fatalf("Search: %v", err)
@@ -245,7 +245,7 @@ func TestQuerierRootScoping(t *testing.T) {
 		}
 	})
 
-	t.Run("con rootName: solo devuelve de esa raíz", func(t *testing.T) {
+	t.Run("con rootName: solo devuelve de esa raÃ­z", func(t *testing.T) {
 		deps, err := q.Dependencies("api.go", "svc-a")
 		if err != nil {
 			t.Fatalf("Dependencies: %v", err)
@@ -274,7 +274,7 @@ func TestQuerierRootScoping(t *testing.T) {
 		}
 	})
 
-	t.Run("Context Roots incluye ambas raíces", func(t *testing.T) {
+	t.Run("Context Roots incluye ambas raÃ­ces", func(t *testing.T) {
 		ctx, err := q.Context()
 		if err != nil {
 			t.Fatalf("Context: %v", err)

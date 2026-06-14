@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"errors"
@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Jomruizgo/Engrafo/internal/workspace"
+	"github.com/Jomruizgo/Engrafo/v2/internal/workspace"
 )
 
 // config holds shared state passed to all subcommands.
@@ -20,11 +20,11 @@ type config struct {
 	stdout        io.Writer
 }
 
-// resolveDB returns the db path according to the precedence defined in §3 of plan-v2.0:
+// resolveDB returns the db path according to the precedence defined in Â§3 of plan-v2.0:
 //  1. --db flag (explicit override)
-//  2. engrafo.json manifest found walking up from CWD → <wsdir>/.engrafo/graph.db
-//  3. .git found walking up from CWD → <gitroot>/.engrafo/graph.db
-//  4. CWD fallback → <cwd>/.engrafo/graph.db
+//  2. engrafo.json manifest found walking up from CWD â†’ <wsdir>/.engrafo/graph.db
+//  3. .git found walking up from CWD â†’ <gitroot>/.engrafo/graph.db
+//  4. CWD fallback â†’ <cwd>/.engrafo/graph.db
 func (cfg *config) resolveDB() (string, error) {
 	if cfg.dbPath != "" {
 		return cfg.dbPath, nil
@@ -114,12 +114,12 @@ func runWith(args []string, stdin io.Reader, stdout io.Writer) error {
 	case "workspace":
 		return cmdWorkspace(cfg, rest[1:])
 	default:
-		return fmt.Errorf("unknown command %q — run engrafo --help", rest[0])
+		return fmt.Errorf("unknown command %q â€” run engrafo --help", rest[0])
 	}
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprint(w, `engrafo — structural code graph for coding agents
+	fmt.Fprint(w, `engrafo â€” structural code graph for coding agents
 
 Usage:
   engrafo [--db <path>] <command> [args]

@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"crypto/sha256"
@@ -11,13 +11,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
-	"github.com/Jomruizgo/Engrafo/internal/parser"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/parser"
 )
 
 func cmdUpdate(cfg *config, args []string) error {
 	fs2 := flag.NewFlagSet("update", flag.ContinueOnError)
-	rootFilter := fs2.String("root", "", "actualizar solo esta raíz (por nombre)")
+	rootFilter := fs2.String("root", "", "actualizar solo esta raÃ­z (por nombre)")
 	fs2.SetOutput(cfg.stdout)
 	if err := fs2.Parse(args); err != nil {
 		return err
@@ -39,10 +39,10 @@ func cmdUpdate(cfg *config, args []string) error {
 		return fmt.Errorf("all roots: %w", err)
 	}
 	if len(roots) == 0 {
-		return fmt.Errorf("no hay raíces indexadas — ejecuta 'engrafo init' primero")
+		return fmt.Errorf("no hay raÃ­ces indexadas â€” ejecuta 'engrafo init' primero")
 	}
 
-	// Filtrar por nombre si se pidió.
+	// Filtrar por nombre si se pidiÃ³.
 	if *rootFilter != "" {
 		filtered := roots[:0]
 		for _, r := range roots {
@@ -57,7 +57,7 @@ func cmdUpdate(cfg *config, args []string) error {
 	return runUpdate(cfg, s, p, roots)
 }
 
-// runUpdate ejecuta el update en proceso sobre las raíces dadas. Reutilizable por el hook session-start.
+// runUpdate ejecuta el update en proceso sobre las raÃ­ces dadas. Reutilizable por el hook session-start.
 func runUpdate(cfg *config, s *graph.Store, p *parser.Parser, roots []graph.RootRow) error {
 	for _, root := range roots {
 		switch root.VCS {
@@ -74,7 +74,7 @@ func runUpdate(cfg *config, s *graph.Store, p *parser.Parser, roots []graph.Root
 	return nil
 }
 
-// updateGitRoot actualiza una raíz vcs=git mediante git diff.
+// updateGitRoot actualiza una raÃ­z vcs=git mediante git diff.
 func updateGitRoot(cfg *config, s *graph.Store, root graph.RootRow, p *parser.Parser) error {
 	headOut, err := exec.Command("git", "-C", root.AbsRoot, "rev-parse", "HEAD").Output()
 	if err != nil {
@@ -84,12 +84,12 @@ func updateGitRoot(cfg *config, s *graph.Store, root graph.RootRow, p *parser.Pa
 
 	lastCommit := root.LastCommitHash
 	if lastCommit == "" {
-		// Fallback para DBs migradas de v1 que aún usan index_meta.
+		// Fallback para DBs migradas de v1 que aÃºn usan index_meta.
 		s.DB().QueryRow(`SELECT COALESCE(value,'') FROM index_meta WHERE key='last_commit_hash'`).Scan(&lastCommit)
 	}
 
 	if currentCommit == lastCommit {
-		fmt.Fprintf(cfg.stdout, "[%s] ya está actualizado en %s\n", root.Name, currentCommit[:12])
+		fmt.Fprintf(cfg.stdout, "[%s] ya estÃ¡ actualizado en %s\n", root.Name, currentCommit[:12])
 		return nil
 	}
 
@@ -100,7 +100,7 @@ func updateGitRoot(cfg *config, s *graph.Store, root graph.RootRow, p *parser.Pa
 
 	var diffOut []byte
 	if lastCommit == "" {
-		// Sin commit previo: diff-tree del HEAD para ver qué introdujo.
+		// Sin commit previo: diff-tree del HEAD para ver quÃ© introdujo.
 		diffOut, _ = exec.Command("git", "-C", root.AbsRoot,
 			"diff-tree", "--no-commit-id", "-r", "--name-only", currentCommit).Output()
 	} else {
@@ -138,12 +138,12 @@ func updateGitRoot(cfg *config, s *graph.Store, root graph.RootRow, p *parser.Pa
 	s.DB().Exec(`INSERT OR REPLACE INTO index_meta(key,value) VALUES('last_commit_hash',?)`, currentCommit)
 	s.SetRootIndexed(root.ID, currentCommit)
 
-	fmt.Fprintf(cfg.stdout, "[%s] actualizado %d archivos (%d omitidos) — en %s\n",
+	fmt.Fprintf(cfg.stdout, "[%s] actualizado %d archivos (%d omitidos) â€” en %s\n",
 		root.Name, updated, skipped, currentCommit[:12])
 	return nil
 }
 
-// updateChecksumRoot actualiza una raíz vcs=none comparando checksums sha256.
+// updateChecksumRoot actualiza una raÃ­z vcs=none comparando checksums sha256.
 func updateChecksumRoot(cfg *config, s *graph.Store, root graph.RootRow, p *parser.Parser) error {
 	type change struct {
 		relPath  string
@@ -230,7 +230,7 @@ func updateChecksumRoot(cfg *config, s *graph.Store, root graph.RootRow, p *pars
 	}
 
 	s.SetRootIndexed(root.ID, "")
-	fmt.Fprintf(cfg.stdout, "[%s] %d actualizado(s), %d borrado(s) — revisión checksum\n",
+	fmt.Fprintf(cfg.stdout, "[%s] %d actualizado(s), %d borrado(s) â€” revisiÃ³n checksum\n",
 		root.Name, updated, deletedCount)
 	return nil
 }

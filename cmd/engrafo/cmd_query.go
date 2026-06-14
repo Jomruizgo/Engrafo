@@ -1,9 +1,9 @@
-package main
+﻿package main
 
 import (
 	"fmt"
 
-	"github.com/Jomruizgo/Engrafo/internal/graph"
+	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
 )
 
 func cmdQuery(cfg *config, args []string) error {

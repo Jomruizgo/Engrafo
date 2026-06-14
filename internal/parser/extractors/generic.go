@@ -1,6 +1,6 @@
-package extractors
+﻿package extractors
 
-import "github.com/Jomruizgo/Engrafo/internal/parser"
+import "github.com/Jomruizgo/Engrafo/v2/internal/parser"
 
 // GenericExtractor is a fallback for languages without a dedicated extractor.
 // It produces a single file-level node with kind "file" and no edges.
