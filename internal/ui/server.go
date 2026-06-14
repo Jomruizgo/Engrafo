@@ -46,6 +46,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/node", s.handleNode)
 	mux.HandleFunc("/api/search", s.handleSearch)
 	mux.HandleFunc("/api/deadcode", s.handleDeadcode)
+	mux.HandleFunc("/api/graph", s.handleGraph)
 
 	return mux
 }
@@ -136,6 +137,16 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		results = []graph.SearchResult{}
 	}
 	writeJSON(w, map[string]any{"results": results})
+}
+
+func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
+	rootName := r.URL.Query().Get("root")
+	data, err := s.querier.GraphData(rootName)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, data)
 }
 
 func (s *Server) handleDeadcode(w http.ResponseWriter, r *http.Request) {

@@ -375,6 +375,106 @@ func (q *Querier) AllNodes(limit int) ([]NodeSummary, error) {
 	return out, rows.Err()
 }
 
+// GraphNode is a node returned by the graph visualization endpoint.
+type GraphNode struct {
+	ID       int64  `json:"id"`
+	Symbol   string `json:"symbol"`
+	Kind     string `json:"kind"`
+	FilePath string `json:"file_path"`
+	Root     string `json:"root"`
+}
+
+// GraphEdge is an active edge returned by the graph visualization endpoint.
+type GraphEdge struct {
+	From int64  `json:"from"`
+	To   int64  `json:"to"`
+	Kind string `json:"kind"`
+}
+
+// GraphDataResult is the shape returned by /api/graph.
+type GraphDataResult struct {
+	Nodes []GraphNode `json:"nodes"`
+	Edges []GraphEdge `json:"edges"`
+}
+
+// GraphData returns all non-external nodes and their active edges for the force-directed canvas.
+// If rootName != "", only returns nodes and edges belonging to that root.
+func (q *Querier) GraphData(rootName string) (*GraphDataResult, error) {
+	nodeQ := `
+		SELECT n.id, n.symbol, n.kind, n.file_path, COALESCE(r.name,'')
+		FROM nodes n
+		JOIN roots r ON r.id = n.root_id
+		WHERE n.kind != 'external'`
+	nodeArgs := []any{}
+	if rootName != "" {
+		nodeQ += " AND r.name = ?"
+		nodeArgs = append(nodeArgs, rootName)
+	}
+	nodeQ += " ORDER BY n.id"
+
+	nRows, err := q.store.db.Query(nodeQ, nodeArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("graph nodes query: %w", err)
+	}
+	defer nRows.Close()
+	var nodes []GraphNode
+	nodeSet := map[int64]bool{}
+	for nRows.Next() {
+		var gn GraphNode
+		if err := nRows.Scan(&gn.ID, &gn.Symbol, &gn.Kind, &gn.FilePath, &gn.Root); err != nil {
+			return nil, err
+		}
+		nodes = append(nodes, gn)
+		nodeSet[gn.ID] = true
+	}
+	if err := nRows.Err(); err != nil {
+		return nil, err
+	}
+
+	edgeQ := `
+		SELECT e.from_id, e.to_id, e.kind
+		FROM edges e
+		JOIN nodes fn ON fn.id = e.from_id
+		JOIN roots fr ON fr.id = fn.root_id
+		JOIN nodes tn ON tn.id = e.to_id
+		WHERE e.valid_until_rev IS NULL
+		  AND fn.kind != 'external'
+		  AND tn.kind != 'external'`
+	edgeArgs := []any{}
+	if rootName != "" {
+		edgeQ += " AND fr.name = ?"
+		edgeArgs = append(edgeArgs, rootName)
+	}
+
+	eRows, err := q.store.db.Query(edgeQ, edgeArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("graph edges query: %w", err)
+	}
+	defer eRows.Close()
+	var edges []GraphEdge
+	for eRows.Next() {
+		var ge GraphEdge
+		if err := eRows.Scan(&ge.From, &ge.To, &ge.Kind); err != nil {
+			return nil, err
+		}
+		// only emit edge if both endpoints are in the visible node set
+		if nodeSet[ge.From] && nodeSet[ge.To] {
+			edges = append(edges, ge)
+		}
+	}
+	if err := eRows.Err(); err != nil {
+		return nil, err
+	}
+
+	if nodes == nil {
+		nodes = []GraphNode{}
+	}
+	if edges == nil {
+		edges = []GraphEdge{}
+	}
+	return &GraphDataResult{Nodes: nodes, Edges: edges}, nil
+}
+
 // Context returns aggregate project statistics for cg_context, including per-root breakdown.
 func (q *Querier) Context() (*ProjectContext, error) {
 	db := q.store.db
