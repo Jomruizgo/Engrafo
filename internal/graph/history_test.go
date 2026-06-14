@@ -88,7 +88,7 @@ func TestHistoryReturnsNodeIdentity(t *testing.T) {
 	s := seedHistoryGraph(t)
 	q := graph.NewQuerier(s)
 
-	result, err := q.History("caller", "function")
+	result, err := q.History("caller", "function", "")
 	if err != nil {
 		t.Fatalf("History: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestHistoryTimelineContainsAppearAndDisappear(t *testing.T) {
 	s := seedHistoryGraph(t)
 	q := graph.NewQuerier(s)
 
-	result, err := q.History("caller", "function")
+	result, err := q.History("caller", "function", "")
 	if err != nil {
 		t.Fatalf("History: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestHistoryDep2Disappeared(t *testing.T) {
 	s := seedHistoryGraph(t)
 	q := graph.NewQuerier(s)
 
-	result, err := q.History("caller", "function")
+	result, err := q.History("caller", "function", "")
 	if err != nil {
 		t.Fatalf("History: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestHistoryDep3Appeared(t *testing.T) {
 	s := seedHistoryGraph(t)
 	q := graph.NewQuerier(s)
 
-	result, err := q.History("caller", "function")
+	result, err := q.History("caller", "function", "")
 	if err != nil {
 		t.Fatalf("History: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestHistoryUnknownSymbolReturnsError(t *testing.T) {
 	s := seedHistoryGraph(t)
 	q := graph.NewQuerier(s)
 
-	_, err := q.History("nonexistent", "")
+	_, err := q.History("nonexistent", "", "")
 	if err == nil {
 		t.Error("want error for unknown symbol, got nil")
 	}

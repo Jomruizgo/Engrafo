@@ -8,6 +8,7 @@ type OrphanNode struct {
 	Kind     string
 	FilePath string
 	Language string
+	Root     string
 }
 
 // AbandonedNode is a node that once had incoming edges but now has none.
@@ -19,6 +20,7 @@ type AbandonedNode struct {
 	Language           string
 	PeakIncomingEdges  int
 	DaysSinceAbandoned float64
+	Root               string
 }
 
 // DeadcodeResult holds the output of a dead-code scan.
@@ -62,8 +64,9 @@ const deadcodeFilter = `
 
 func (q *Querier) queryOrphans(thresholdDays int) ([]OrphanNode, error) {
 	sqlStr := `
-		SELECT n.symbol, n.kind, n.file_path, n.language
+		SELECT n.symbol, n.kind, n.file_path, n.language, COALESCE(r.name,'')
 		FROM nodes n
+		JOIN roots r ON r.id = n.root_id
 		WHERE ` + deadcodeFilter + `
 		  AND NOT EXISTS (
 		      SELECT 1 FROM edges e WHERE e.to_id = n.id
@@ -83,7 +86,7 @@ func (q *Querier) queryOrphans(thresholdDays int) ([]OrphanNode, error) {
 	var out []OrphanNode
 	for rows.Next() {
 		var o OrphanNode
-		if err := rows.Scan(&o.Symbol, &o.Kind, &o.FilePath, &o.Language); err != nil {
+		if err := rows.Scan(&o.Symbol, &o.Kind, &o.FilePath, &o.Language, &o.Root); err != nil {
 			return nil, err
 		}
 		out = append(out, o)
@@ -99,8 +102,10 @@ func (q *Querier) queryAbandoned(thresholdDays int) ([]AbandonedNode, error) {
 		       COALESCE(
 		           julianday('now') - julianday(MAX(r.created_at)),
 		           0
-		       ) AS days_since_abandoned
+		       ) AS days_since_abandoned,
+		       COALESCE(r_root.name,'')
 		FROM nodes n
+		JOIN roots r_root ON r_root.id = n.root_id
 		JOIN edges e_hist ON e_hist.to_id = n.id AND e_hist.valid_until_rev IS NOT NULL
 		JOIN revisions r ON r.id = e_hist.valid_until_rev
 		WHERE ` + deadcodeFilter + `
@@ -126,7 +131,7 @@ func (q *Querier) queryAbandoned(thresholdDays int) ([]AbandonedNode, error) {
 	for rows.Next() {
 		var a AbandonedNode
 		if err := rows.Scan(&a.Symbol, &a.Kind, &a.FilePath, &a.Language,
-			&a.PeakIncomingEdges, &a.DaysSinceAbandoned); err != nil {
+			&a.PeakIncomingEdges, &a.DaysSinceAbandoned, &a.Root); err != nil {
 			return nil, err
 		}
 		out = append(out, a)

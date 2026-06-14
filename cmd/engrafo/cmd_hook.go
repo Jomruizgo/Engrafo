@@ -7,6 +7,7 @@ import (
 
 	"github.com/Jomruizgo/Engrafo/internal/graph"
 	"github.com/Jomruizgo/Engrafo/internal/hooks"
+	"github.com/Jomruizgo/Engrafo/internal/workspace"
 )
 
 // hookEvent is the JSON payload Claude Code sends to hook stdin.
@@ -51,6 +52,14 @@ func hookSessionStart(cfg *config) error {
 	s := hookOpenStore(cfg)
 	if s != nil {
 		defer s.Close()
+
+		// Disparar update en proceso (best-effort; salida silenciada para no corromper el JSON).
+		if roots, err := s.AllRoots(); err == nil && len(roots) > 0 {
+			silentCfg := &config{stdout: io.Discard}
+			p := newParser()
+			_ = runUpdate(silentCfg, s, p, roots)
+		}
+
 		msg = hooks.SessionStartMessage(graph.NewQuerier(s))
 	}
 	fmt.Fprint(cfg.stdout, hooks.BuildOutput(msg))
@@ -66,7 +75,13 @@ func hookPreRead(cfg *config) error {
 		s := hookOpenStore(cfg)
 		if s != nil {
 			defer s.Close()
-			msg = hooks.PreReadMessage(graph.NewQuerier(s), filePath)
+			q := graph.NewQuerier(s)
+			rootName, relPath, ok := workspace.ResolveFileToRoot(s, filePath)
+			if ok {
+				msg = hooks.PreReadMessage(q, relPath, rootName)
+			} else {
+				msg = hooks.PreReadMessage(q, filePath, "")
+			}
 		}
 	}
 	fmt.Fprint(cfg.stdout, hooks.BuildOutput(msg))
@@ -82,7 +97,13 @@ func hookPreWrite(cfg *config) error {
 		s := hookOpenStore(cfg)
 		if s != nil {
 			defer s.Close()
-			msg = hooks.PreWriteMessage(graph.NewQuerier(s), filePath, 3)
+			q := graph.NewQuerier(s)
+			rootName, relPath, ok := workspace.ResolveFileToRoot(s, filePath)
+			if ok {
+				msg = hooks.PreWriteMessage(q, relPath, 3, rootName)
+			} else {
+				msg = hooks.PreWriteMessage(q, filePath, 3, "")
+			}
 		}
 	}
 	fmt.Fprint(cfg.stdout, hooks.BuildOutput(msg))

@@ -93,7 +93,7 @@ func (s *Server) handleNode(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing symbol param", http.StatusBadRequest)
 		return
 	}
-	result, err := s.querier.NodeInfo(symbol, kind, true)
+	result, err := s.querier.NodeInfo(symbol, kind, true, "")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -127,7 +127,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"results": []any{}})
 		return
 	}
-	results, err := s.querier.Search(q, limit)
+	results, err := s.querier.Search(q, limit, "")
 	if err != nil {
 		writeJSON(w, map[string]any{"results": []any{}})
 		return

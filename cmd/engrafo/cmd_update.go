@@ -42,17 +42,30 @@ func cmdUpdate(cfg *config, args []string) error {
 		return fmt.Errorf("no hay raíces indexadas — ejecuta 'engrafo init' primero")
 	}
 
-	p := newParser()
-	for _, root := range roots {
-		if *rootFilter != "" && root.Name != *rootFilter {
-			continue
+	// Filtrar por nombre si se pidió.
+	if *rootFilter != "" {
+		filtered := roots[:0]
+		for _, r := range roots {
+			if r.Name == *rootFilter {
+				filtered = append(filtered, r)
+			}
 		}
+		roots = filtered
+	}
+
+	p := newParser()
+	return runUpdate(cfg, s, p, roots)
+}
+
+// runUpdate ejecuta el update en proceso sobre las raíces dadas. Reutilizable por el hook session-start.
+func runUpdate(cfg *config, s *graph.Store, p *parser.Parser, roots []graph.RootRow) error {
+	for _, root := range roots {
 		switch root.VCS {
 		case "git":
 			if err := updateGitRoot(cfg, s, root, p); err != nil {
 				fmt.Fprintf(cfg.stdout, "  [%s] error: %v\n", root.Name, err)
 			}
-		default: // "none"
+		default:
 			if err := updateChecksumRoot(cfg, s, root, p); err != nil {
 				fmt.Fprintf(cfg.stdout, "  [%s] error: %v\n", root.Name, err)
 			}

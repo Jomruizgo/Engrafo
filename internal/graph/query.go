@@ -9,6 +9,7 @@ type DependentNode struct {
 	Kind     string
 	EdgeKind string
 	Depth    int
+	Root     string // nombre de la raíz que contiene el nodo
 }
 
 // SearchResult is a node returned by FTS5 symbol search.
@@ -16,6 +17,7 @@ type SearchResult struct {
 	Symbol   string
 	Kind     string
 	FilePath string
+	Root     string
 }
 
 // NodeSummary is a compact node representation for project context.
@@ -24,6 +26,18 @@ type NodeSummary struct {
 	Kind     string
 	FilePath string
 	InDegree int
+	Root     string
+}
+
+// RootContext is per-root statistics returned by Context.
+type RootContext struct {
+	Name       string   `json:"name"`
+	Path       string   `json:"path"`
+	Remote     string   `json:"remote"`
+	Branch     string   `json:"branch"`
+	VCS        string   `json:"vcs"`
+	TotalNodes int      `json:"total_nodes"`
+	Languages  []string `json:"languages"`
 }
 
 // ProjectContext is the high-level summary returned by cg_context.
@@ -32,6 +46,7 @@ type ProjectContext struct {
 	Languages  []string
 	TopNodes   []NodeSummary
 	NodeCounts map[string]int
+	Roots      []RootContext
 }
 
 // NodeDetail holds the full metadata for a single graph node.
@@ -43,6 +58,7 @@ type NodeDetail struct {
 	LineStart int
 	LineEnd   int
 	Language  string
+	Root      string
 }
 
 // NodeInfoResult holds a node's details plus its incoming/outgoing edges and anchors.
@@ -68,15 +84,23 @@ func NewQuerier(s *Store) *Querier {
 }
 
 // Dependencies returns all active outgoing edges from nodes in filePath.
-func (q *Querier) Dependencies(filePath string) ([]DependentNode, error) {
-	rows, err := q.store.db.Query(`
-		SELECT n2.symbol, n2.file_path, n2.kind, e.kind
+// If rootName != "", only considers nodes within that root.
+func (q *Querier) Dependencies(filePath, rootName string) ([]DependentNode, error) {
+	qStr := `
+		SELECT n2.symbol, n2.file_path, n2.kind, e.kind, COALESCE(r2.name,'')
 		FROM edges e
 		JOIN nodes n1 ON n1.id = e.from_id
 		JOIN nodes n2 ON n2.id = e.to_id
+		JOIN roots r1 ON r1.id = n1.root_id
+		JOIN roots r2 ON r2.id = n2.root_id
 		WHERE n1.file_path = ?
-		  AND e.valid_until_rev IS NULL
-	`, filePath)
+		  AND e.valid_until_rev IS NULL`
+	args := []any{filePath}
+	if rootName != "" {
+		qStr += " AND r1.name = ?"
+		args = append(args, rootName)
+	}
+	rows, err := q.store.db.Query(qStr, args...)
 	if err != nil {
 		return nil, fmt.Errorf("dependencies query: %w", err)
 	}
@@ -84,7 +108,7 @@ func (q *Querier) Dependencies(filePath string) ([]DependentNode, error) {
 	var out []DependentNode
 	for rows.Next() {
 		var d DependentNode
-		if err := rows.Scan(&d.Symbol, &d.FilePath, &d.Kind, &d.EdgeKind); err != nil {
+		if err := rows.Scan(&d.Symbol, &d.FilePath, &d.Kind, &d.EdgeKind, &d.Root); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
@@ -93,15 +117,23 @@ func (q *Querier) Dependencies(filePath string) ([]DependentNode, error) {
 }
 
 // Dependents returns all nodes that have active edges pointing into nodes of filePath.
-func (q *Querier) Dependents(filePath string) ([]DependentNode, error) {
-	rows, err := q.store.db.Query(`
-		SELECT DISTINCT n1.symbol, n1.file_path, n1.kind, e.kind
+// If rootName != "", only considers the target file within that root.
+func (q *Querier) Dependents(filePath, rootName string) ([]DependentNode, error) {
+	qStr := `
+		SELECT DISTINCT n1.symbol, n1.file_path, n1.kind, e.kind, COALESCE(r1.name,'')
 		FROM edges e
 		JOIN nodes n1 ON n1.id = e.from_id
 		JOIN nodes n2 ON n2.id = e.to_id
+		JOIN roots r1 ON r1.id = n1.root_id
+		JOIN roots r2 ON r2.id = n2.root_id
 		WHERE n2.file_path = ?
-		  AND e.valid_until_rev IS NULL
-	`, filePath)
+		  AND e.valid_until_rev IS NULL`
+	args := []any{filePath}
+	if rootName != "" {
+		qStr += " AND r2.name = ?"
+		args = append(args, rootName)
+	}
+	rows, err := q.store.db.Query(qStr, args...)
 	if err != nil {
 		return nil, fmt.Errorf("dependents query: %w", err)
 	}
@@ -109,7 +141,7 @@ func (q *Querier) Dependents(filePath string) ([]DependentNode, error) {
 	var out []DependentNode
 	for rows.Next() {
 		var d DependentNode
-		if err := rows.Scan(&d.Symbol, &d.FilePath, &d.Kind, &d.EdgeKind); err != nil {
+		if err := rows.Scan(&d.Symbol, &d.FilePath, &d.Kind, &d.EdgeKind, &d.Root); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
@@ -118,15 +150,25 @@ func (q *Querier) Dependents(filePath string) ([]DependentNode, error) {
 }
 
 // Impact returns the transitive blast radius of modifying filePath up to depth hops.
-func (q *Querier) Impact(filePath string, depth int) ([]DependentNode, error) {
+// If rootName != "", only starts from nodes within that root.
+func (q *Querier) Impact(filePath string, depth int, rootName string) ([]DependentNode, error) {
 	if depth <= 0 {
 		depth = 3
 	}
-	rows, err := q.store.db.Query(`
+
+	baseArgs := []any{filePath, depth, filePath}
+	rootFilter := ""
+	if rootName != "" {
+		rootFilter = " AND r_seed.name = ?"
+		baseArgs = []any{filePath, rootName, depth, filePath}
+	}
+
+	qStr := fmt.Sprintf(`
 		WITH RECURSIVE impact(node_id, file_path, depth) AS (
-			SELECT id, file_path, 0
-			FROM nodes
-			WHERE file_path = ?
+			SELECT n.id, n.file_path, 0
+			FROM nodes n
+			JOIN roots r_seed ON r_seed.id = n.root_id
+			WHERE n.file_path = ?%s
 			UNION
 			SELECT n_from.id, n_from.file_path, imp.depth + 1
 			FROM impact imp
@@ -135,13 +177,15 @@ func (q *Querier) Impact(filePath string, depth int) ([]DependentNode, error) {
 			JOIN nodes n_from ON n_from.id = e.from_id
 			WHERE imp.depth < ?
 		)
-		SELECT DISTINCT n.symbol, n.file_path, n.kind, MIN(imp.depth) AS depth
+		SELECT DISTINCT n.symbol, n.file_path, n.kind, MIN(imp.depth) AS depth, COALESCE(r.name,'')
 		FROM impact imp
 		JOIN nodes n ON n.id = imp.node_id
+		JOIN roots r ON r.id = n.root_id
 		WHERE imp.file_path != ?
 		  AND imp.depth > 0
-		GROUP BY n.id
-	`, filePath, depth, filePath)
+		GROUP BY n.id`, rootFilter)
+
+	rows, err := q.store.db.Query(qStr, baseArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("impact query: %w", err)
 	}
@@ -149,7 +193,7 @@ func (q *Querier) Impact(filePath string, depth int) ([]DependentNode, error) {
 	var out []DependentNode
 	for rows.Next() {
 		var d DependentNode
-		if err := rows.Scan(&d.Symbol, &d.FilePath, &d.Kind, &d.Depth); err != nil {
+		if err := rows.Scan(&d.Symbol, &d.FilePath, &d.Kind, &d.Depth, &d.Root); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
@@ -158,18 +202,26 @@ func (q *Querier) Impact(filePath string, depth int) ([]DependentNode, error) {
 }
 
 // Search performs FTS5 search over symbol names and returns up to limit results.
-func (q *Querier) Search(query string, limit int) ([]SearchResult, error) {
+// If rootName != "", only returns results from that root.
+func (q *Querier) Search(query string, limit int, rootName string) ([]SearchResult, error) {
 	if limit <= 0 {
 		limit = 10
 	}
-	rows, err := q.store.db.Query(`
-		SELECT n.symbol, n.kind, n.file_path
+	qStr := `
+		SELECT n.symbol, n.kind, n.file_path, COALESCE(r.name,'')
 		FROM nodes_fts f
 		JOIN nodes n ON n.id = f.rowid
-		WHERE nodes_fts MATCH ?
-		ORDER BY rank
-		LIMIT ?
-	`, query, limit)
+		JOIN roots r ON r.id = n.root_id
+		WHERE nodes_fts MATCH ?`
+	args := []any{query}
+	if rootName != "" {
+		qStr += " AND r.name = ?"
+		args = append(args, rootName)
+	}
+	qStr += " ORDER BY rank LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := q.store.db.Query(qStr, args...)
 	if err != nil {
 		return nil, fmt.Errorf("fts search: %w", err)
 	}
@@ -177,7 +229,7 @@ func (q *Querier) Search(query string, limit int) ([]SearchResult, error) {
 	var out []SearchResult
 	for rows.Next() {
 		var r SearchResult
-		if err := rows.Scan(&r.Symbol, &r.Kind, &r.FilePath); err != nil {
+		if err := rows.Scan(&r.Symbol, &r.Kind, &r.FilePath, &r.Root); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -186,26 +238,40 @@ func (q *Querier) Search(query string, limit int) ([]SearchResult, error) {
 }
 
 // NodeInfo returns detailed information for a single node identified by symbol (and optionally kind).
-func (q *Querier) NodeInfo(symbol, kind string, includeInvalidated bool) (*NodeInfoResult, error) {
+// If rootName != "", restricts to that root.
+func (q *Querier) NodeInfo(symbol, kind string, includeInvalidated bool, rootName string) (*NodeInfoResult, error) {
 	db := q.store.db
-	qStr := `SELECT id, symbol, kind, file_path, COALESCE(line_start,0), COALESCE(line_end,0), language
-	         FROM nodes WHERE symbol = ? AND kind != 'external'`
+	qStr := `
+		SELECT n.id, n.symbol, n.kind, n.file_path,
+		       COALESCE(n.line_start,0), COALESCE(n.line_end,0), n.language, COALESCE(r.name,'')
+		FROM nodes n
+		JOIN roots r ON r.id = n.root_id
+		WHERE n.symbol = ? AND n.kind != 'external'`
 	args := []any{symbol}
 	if kind != "" {
-		qStr += " AND kind = ?"
+		qStr += " AND n.kind = ?"
 		args = append(args, kind)
+	}
+	if rootName != "" {
+		qStr += " AND r.name = ?"
+		args = append(args, rootName)
 	}
 	qStr += " LIMIT 1"
 
 	var nd NodeDetail
-	err := db.QueryRow(qStr, args...).Scan(&nd.ID, &nd.Symbol, &nd.Kind, &nd.FilePath, &nd.LineStart, &nd.LineEnd, &nd.Language)
+	err := db.QueryRow(qStr, args...).Scan(
+		&nd.ID, &nd.Symbol, &nd.Kind, &nd.FilePath,
+		&nd.LineStart, &nd.LineEnd, &nd.Language, &nd.Root,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("node lookup %q: %w", symbol, err)
 	}
 
 	outRows, err := db.Query(`
-		SELECT n2.symbol, n2.file_path, n2.kind, e.kind
-		FROM edges e JOIN nodes n2 ON n2.id = e.to_id
+		SELECT n2.symbol, n2.file_path, n2.kind, e.kind, COALESCE(r2.name,'')
+		FROM edges e
+		JOIN nodes n2 ON n2.id = e.to_id
+		JOIN roots r2 ON r2.id = n2.root_id
 		WHERE e.from_id = ? AND e.valid_until_rev IS NULL`, nd.ID)
 	if err != nil {
 		return nil, err
@@ -214,14 +280,16 @@ func (q *Querier) NodeInfo(symbol, kind string, includeInvalidated bool) (*NodeI
 	var dependsOn []DependentNode
 	for outRows.Next() {
 		var d DependentNode
-		outRows.Scan(&d.Symbol, &d.FilePath, &d.Kind, &d.EdgeKind)
+		outRows.Scan(&d.Symbol, &d.FilePath, &d.Kind, &d.EdgeKind, &d.Root)
 		dependsOn = append(dependsOn, d)
 	}
 	outRows.Close()
 
 	inRows, err := db.Query(`
-		SELECT n1.symbol, n1.file_path, n1.kind, e.kind
-		FROM edges e JOIN nodes n1 ON n1.id = e.from_id
+		SELECT n1.symbol, n1.file_path, n1.kind, e.kind, COALESCE(r1.name,'')
+		FROM edges e
+		JOIN nodes n1 ON n1.id = e.from_id
+		JOIN roots r1 ON r1.id = n1.root_id
 		WHERE e.to_id = ? AND e.valid_until_rev IS NULL`, nd.ID)
 	if err != nil {
 		return nil, err
@@ -230,7 +298,7 @@ func (q *Querier) NodeInfo(symbol, kind string, includeInvalidated bool) (*NodeI
 	var usedBy []DependentNode
 	for inRows.Next() {
 		var d DependentNode
-		inRows.Scan(&d.Symbol, &d.FilePath, &d.Kind, &d.EdgeKind)
+		inRows.Scan(&d.Symbol, &d.FilePath, &d.Kind, &d.EdgeKind, &d.Root)
 		usedBy = append(usedBy, d)
 	}
 	inRows.Close()
@@ -238,8 +306,10 @@ func (q *Querier) NodeInfo(symbol, kind string, includeInvalidated bool) (*NodeI
 	var historical []DependentNode
 	if includeInvalidated {
 		hRows, err := db.Query(`
-			SELECT n2.symbol, n2.file_path, n2.kind, e.kind
-			FROM edges e JOIN nodes n2 ON n2.id = e.to_id
+			SELECT n2.symbol, n2.file_path, n2.kind, e.kind, COALESCE(r2.name,'')
+			FROM edges e
+			JOIN nodes n2 ON n2.id = e.to_id
+			JOIN roots r2 ON r2.id = n2.root_id
 			WHERE e.from_id = ? AND e.valid_until_rev IS NOT NULL`, nd.ID)
 		if err != nil {
 			return nil, err
@@ -247,7 +317,7 @@ func (q *Querier) NodeInfo(symbol, kind string, includeInvalidated bool) (*NodeI
 		defer hRows.Close()
 		for hRows.Next() {
 			var d DependentNode
-			hRows.Scan(&d.Symbol, &d.FilePath, &d.Kind, &d.EdgeKind)
+			hRows.Scan(&d.Symbol, &d.FilePath, &d.Kind, &d.EdgeKind, &d.Root)
 			historical = append(historical, d)
 		}
 	}
@@ -273,13 +343,14 @@ func (q *Querier) NodeInfo(symbol, kind string, includeInvalidated bool) (*NodeI
 	}, nil
 }
 
-// AllNodes returns every non-external, non-file node in the graph.
+// AllNodes returns every non-external, non-file node in the graph with its root name.
 // limit <= 0 returns all nodes.
 func (q *Querier) AllNodes(limit int) ([]NodeSummary, error) {
 	qStr := `
 		SELECT n.symbol, n.kind, n.file_path,
-		       count(e.id) AS in_degree
+		       COUNT(e.id) AS in_degree, COALESCE(r.name,'')
 		FROM nodes n
+		JOIN roots r ON r.id = n.root_id
 		LEFT JOIN edges e ON e.to_id = n.id AND e.valid_until_rev IS NULL
 		WHERE n.kind NOT IN ('external', 'file')
 		GROUP BY n.id
@@ -296,7 +367,7 @@ func (q *Querier) AllNodes(limit int) ([]NodeSummary, error) {
 	var out []NodeSummary
 	for rows.Next() {
 		var ns NodeSummary
-		if err := rows.Scan(&ns.Symbol, &ns.Kind, &ns.FilePath, &ns.InDegree); err != nil {
+		if err := rows.Scan(&ns.Symbol, &ns.Kind, &ns.FilePath, &ns.InDegree, &ns.Root); err != nil {
 			return nil, err
 		}
 		out = append(out, ns)
@@ -304,17 +375,19 @@ func (q *Querier) AllNodes(limit int) ([]NodeSummary, error) {
 	return out, rows.Err()
 }
 
-// Context returns aggregate project statistics for cg_context.
+// Context returns aggregate project statistics for cg_context, including per-root breakdown.
 func (q *Querier) Context() (*ProjectContext, error) {
 	db := q.store.db
 
 	var total int
-	if err := db.QueryRow(`SELECT count(*) FROM nodes WHERE kind != 'external' AND kind != 'file'`).Scan(&total); err != nil {
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM nodes WHERE kind != 'external' AND kind != 'file'`,
+	).Scan(&total); err != nil {
 		return nil, fmt.Errorf("count nodes: %w", err)
 	}
 
 	rows, err := db.Query(`
-		SELECT language, count(*) FROM nodes
+		SELECT language, COUNT(*) FROM nodes
 		WHERE kind != 'external' AND language != 'external'
 		GROUP BY language
 	`)
@@ -334,8 +407,9 @@ func (q *Querier) Context() (*ProjectContext, error) {
 	rows.Close()
 
 	topRows, err := db.Query(`
-		SELECT n.symbol, n.kind, n.file_path, count(e.id) AS in_degree
+		SELECT n.symbol, n.kind, n.file_path, COUNT(e.id) AS in_degree, COALESCE(r.name,'')
 		FROM nodes n
+		JOIN roots r ON r.id = n.root_id
 		LEFT JOIN edges e ON e.to_id = n.id AND e.valid_until_rev IS NULL
 		WHERE n.kind != 'external' AND n.kind != 'file'
 		GROUP BY n.id
@@ -349,8 +423,50 @@ func (q *Querier) Context() (*ProjectContext, error) {
 	var top []NodeSummary
 	for topRows.Next() {
 		var ns NodeSummary
-		topRows.Scan(&ns.Symbol, &ns.Kind, &ns.FilePath, &ns.InDegree)
+		topRows.Scan(&ns.Symbol, &ns.Kind, &ns.FilePath, &ns.InDegree, &ns.Root)
 		top = append(top, ns)
+	}
+
+	// Per-root context.
+	rootRows, err := db.Query(`
+		SELECT r.name, r.rel_path, COALESCE(r.remote_url,''), COALESCE(r.default_branch,''), r.vcs,
+		       COUNT(DISTINCT n.id)
+		FROM roots r
+		LEFT JOIN nodes n ON n.root_id = r.id AND n.kind != 'external' AND n.kind != 'file'
+		GROUP BY r.id
+		ORDER BY r.name
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("roots context query: %w", err)
+	}
+	defer rootRows.Close()
+	var rootCtxs []RootContext
+	for rootRows.Next() {
+		var rc RootContext
+		rootRows.Scan(&rc.Name, &rc.Path, &rc.Remote, &rc.Branch, &rc.VCS, &rc.TotalNodes)
+		rootCtxs = append(rootCtxs, rc)
+	}
+	rootRows.Close()
+
+	// Lenguajes por raíz.
+	for i, rc := range rootCtxs {
+		langRows, err := db.Query(`
+			SELECT DISTINCT n.language
+			FROM nodes n
+			JOIN roots r ON r.id = n.root_id
+			WHERE r.name = ? AND n.kind != 'external' AND n.language != 'external'
+		`, rc.Name)
+		if err != nil {
+			continue
+		}
+		var rootLangs []string
+		for langRows.Next() {
+			var l string
+			langRows.Scan(&l)
+			rootLangs = append(rootLangs, l)
+		}
+		langRows.Close()
+		rootCtxs[i].Languages = rootLangs
 	}
 
 	return &ProjectContext{
@@ -358,5 +474,6 @@ func (q *Querier) Context() (*ProjectContext, error) {
 		Languages:  langs,
 		TopNodes:   top,
 		NodeCounts: counts,
+		Roots:      rootCtxs,
 	}, nil
 }

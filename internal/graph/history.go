@@ -25,15 +25,23 @@ type HistoryResult struct {
 // History returns the chronological edge timeline for the node identified by symbol and kind.
 // The timeline includes edge appearances (valid_from_rev) and disappearances (valid_until_rev)
 // ordered by revision ID (monotonic).
-func (q *Querier) History(symbol, kind string) (*HistoryResult, error) {
+// If rootName != "", restricts to that root.
+func (q *Querier) History(symbol, kind, rootName string) (*HistoryResult, error) {
 	db := q.store.db
 
-	qStr := `SELECT id, symbol, kind, file_path, language
-	         FROM nodes WHERE symbol = ? AND kind != 'external'`
+	qStr := `
+		SELECT n.id, n.symbol, n.kind, n.file_path, n.language
+		FROM nodes n
+		JOIN roots r ON r.id = n.root_id
+		WHERE n.symbol = ? AND n.kind != 'external'`
 	args := []any{symbol}
 	if kind != "" {
-		qStr += " AND kind = ?"
+		qStr += " AND n.kind = ?"
 		args = append(args, kind)
+	}
+	if rootName != "" {
+		qStr += " AND r.name = ?"
+		args = append(args, rootName)
 	}
 	qStr += " LIMIT 1"
 

@@ -200,7 +200,7 @@ func TestMigrationV1ToV2(t *testing.T) {
 
 	// FTS still works.
 	q := graph.NewQuerier(s)
-	results, err := q.Search("FuncA", 5)
+	results, err := q.Search("FuncA", 5, "")
 	if err != nil {
 		t.Fatalf("FTS search after migration: %v", err)
 	}

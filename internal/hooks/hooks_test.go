@@ -76,7 +76,7 @@ func TestPreReadMessageWithDependents(t *testing.T) {
 	seedGraph(t, s)
 	q := graph.NewQuerier(s)
 
-	msg := hooks.PreReadMessage(q, "user.go")
+	msg := hooks.PreReadMessage(q, "user.go", "")
 
 	if msg == "" {
 		t.Error("want non-empty pre-read message for file with dependents")
@@ -97,7 +97,7 @@ func TestPreReadMessageNoDependents(t *testing.T) {
 	})
 	q := graph.NewQuerier(s)
 
-	msg := hooks.PreReadMessage(q, "isolated.go")
+	msg := hooks.PreReadMessage(q, "isolated.go", "")
 
 	if msg != "" {
 		t.Errorf("want empty message for file with no dependents, got %q", msg)
@@ -109,7 +109,7 @@ func TestPreWriteMessageAlwaysReturnsMessage(t *testing.T) {
 	seedGraph(t, s)
 	q := graph.NewQuerier(s)
 
-	msg := hooks.PreWriteMessage(q, "user.go", 3)
+	msg := hooks.PreWriteMessage(q, "user.go", 3, "")
 
 	if msg == "" {
 		t.Error("want non-empty pre-write message")
