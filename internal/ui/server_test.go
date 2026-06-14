@@ -21,8 +21,18 @@ func openSeededStore(t *testing.T) *graph.Store {
 	}
 	t.Cleanup(func() { s.Close() })
 
+	rootID, err := s.UpsertRoot(graph.ResolvedRoot{
+		Name: "test", RelPath: ".", AbsRoot: dir, VCS: "none",
+	})
+	if err != nil {
+		t.Fatalf("UpsertRoot: %v", err)
+	}
+	revID, err := s.CreateRevision(rootID, "git", "abc123")
+	if err != nil {
+		t.Fatalf("CreateRevision: %v", err)
+	}
 	b := graph.NewBuilder(s)
-	err = b.UpsertFile("abc123", &parser.Result{
+	err = b.UpsertFile(rootID, revID, "", &parser.Result{
 		Nodes: []parser.Node{
 			{Symbol: "processOrder", Kind: "function", FilePath: "order.go", Language: "go"},
 			{Symbol: "Order", Kind: "class", FilePath: "order.go", Language: "go"},

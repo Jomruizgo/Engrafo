@@ -47,11 +47,11 @@ type NodeDetail struct {
 
 // NodeInfoResult holds a node's details plus its incoming/outgoing edges and anchors.
 type NodeInfoResult struct {
-	Node                NodeDetail
-	DependsOn           []DependentNode
-	UsedBy              []DependentNode
-	HistoricalEdges     []DependentNode
-	AnchoredObsIDs      []string
+	Node            NodeDetail
+	DependsOn       []DependentNode
+	UsedBy          []DependentNode
+	HistoricalEdges []DependentNode
+	AnchoredObsIDs  []string
 }
 
 // QueryResult is an alias kept for backwards compatibility.
@@ -75,7 +75,7 @@ func (q *Querier) Dependencies(filePath string) ([]DependentNode, error) {
 		JOIN nodes n1 ON n1.id = e.from_id
 		JOIN nodes n2 ON n2.id = e.to_id
 		WHERE n1.file_path = ?
-		  AND e.valid_until_commit IS NULL
+		  AND e.valid_until_rev IS NULL
 	`, filePath)
 	if err != nil {
 		return nil, fmt.Errorf("dependencies query: %w", err)
@@ -100,7 +100,7 @@ func (q *Querier) Dependents(filePath string) ([]DependentNode, error) {
 		JOIN nodes n1 ON n1.id = e.from_id
 		JOIN nodes n2 ON n2.id = e.to_id
 		WHERE n2.file_path = ?
-		  AND e.valid_until_commit IS NULL
+		  AND e.valid_until_rev IS NULL
 	`, filePath)
 	if err != nil {
 		return nil, fmt.Errorf("dependents query: %w", err)
@@ -118,25 +118,20 @@ func (q *Querier) Dependents(filePath string) ([]DependentNode, error) {
 }
 
 // Impact returns the transitive blast radius of modifying filePath up to depth hops.
-// Uses a recursive CTE that expands file-level: if any node in file X is impacted,
-// all nodes in file X are considered impacted (so edges from any of them are followed).
 func (q *Querier) Impact(filePath string, depth int) ([]DependentNode, error) {
 	if depth <= 0 {
 		depth = 3
 	}
 	rows, err := q.store.db.Query(`
 		WITH RECURSIVE impact(node_id, file_path, depth) AS (
-			-- seed: all nodes in the target file
 			SELECT id, file_path, 0
 			FROM nodes
 			WHERE file_path = ?
 			UNION
-			-- traverse: for each impacted node, expand to all peers in the same file,
-			-- then find nodes that have edges pointing to any peer
 			SELECT n_from.id, n_from.file_path, imp.depth + 1
 			FROM impact imp
 			JOIN nodes n_peer ON n_peer.file_path = imp.file_path
-			JOIN edges e ON e.to_id = n_peer.id AND e.valid_until_commit IS NULL
+			JOIN edges e ON e.to_id = n_peer.id AND e.valid_until_rev IS NULL
 			JOIN nodes n_from ON n_from.id = e.from_id
 			WHERE imp.depth < ?
 		)
@@ -208,11 +203,10 @@ func (q *Querier) NodeInfo(symbol, kind string, includeInvalidated bool) (*NodeI
 		return nil, fmt.Errorf("node lookup %q: %w", symbol, err)
 	}
 
-	// outgoing edges (depends_on)
 	outRows, err := db.Query(`
 		SELECT n2.symbol, n2.file_path, n2.kind, e.kind
 		FROM edges e JOIN nodes n2 ON n2.id = e.to_id
-		WHERE e.from_id = ? AND e.valid_until_commit IS NULL`, nd.ID)
+		WHERE e.from_id = ? AND e.valid_until_rev IS NULL`, nd.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -225,11 +219,10 @@ func (q *Querier) NodeInfo(symbol, kind string, includeInvalidated bool) (*NodeI
 	}
 	outRows.Close()
 
-	// incoming edges (used_by)
 	inRows, err := db.Query(`
 		SELECT n1.symbol, n1.file_path, n1.kind, e.kind
 		FROM edges e JOIN nodes n1 ON n1.id = e.from_id
-		WHERE e.to_id = ? AND e.valid_until_commit IS NULL`, nd.ID)
+		WHERE e.to_id = ? AND e.valid_until_rev IS NULL`, nd.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -242,13 +235,12 @@ func (q *Querier) NodeInfo(symbol, kind string, includeInvalidated bool) (*NodeI
 	}
 	inRows.Close()
 
-	// historical edges (only if requested)
 	var historical []DependentNode
 	if includeInvalidated {
 		hRows, err := db.Query(`
 			SELECT n2.symbol, n2.file_path, n2.kind, e.kind
 			FROM edges e JOIN nodes n2 ON n2.id = e.to_id
-			WHERE e.from_id = ? AND e.valid_until_commit IS NOT NULL`, nd.ID)
+			WHERE e.from_id = ? AND e.valid_until_rev IS NOT NULL`, nd.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -260,7 +252,6 @@ func (q *Querier) NodeInfo(symbol, kind string, includeInvalidated bool) (*NodeI
 		}
 	}
 
-	// anchored observation IDs
 	aRows, err := db.Query(`SELECT engram_obs_id FROM engram_anchors WHERE node_id = ?`, nd.ID)
 	if err != nil {
 		return nil, err
@@ -289,7 +280,7 @@ func (q *Querier) AllNodes(limit int) ([]NodeSummary, error) {
 		SELECT n.symbol, n.kind, n.file_path,
 		       count(e.id) AS in_degree
 		FROM nodes n
-		LEFT JOIN edges e ON e.to_id = n.id AND e.valid_until_commit IS NULL
+		LEFT JOIN edges e ON e.to_id = n.id AND e.valid_until_rev IS NULL
 		WHERE n.kind NOT IN ('external', 'file')
 		GROUP BY n.id
 		ORDER BY n.symbol
@@ -342,11 +333,10 @@ func (q *Querier) Context() (*ProjectContext, error) {
 	}
 	rows.Close()
 
-	// Top 10 nodes by incoming edge count.
 	topRows, err := db.Query(`
 		SELECT n.symbol, n.kind, n.file_path, count(e.id) AS in_degree
 		FROM nodes n
-		LEFT JOIN edges e ON e.to_id = n.id AND e.valid_until_commit IS NULL
+		LEFT JOIN edges e ON e.to_id = n.id AND e.valid_until_rev IS NULL
 		WHERE n.kind != 'external' AND n.kind != 'file'
 		GROUP BY n.id
 		ORDER BY in_degree DESC

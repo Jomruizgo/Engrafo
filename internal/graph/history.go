@@ -4,7 +4,7 @@ import "fmt"
 
 // HistoryEdgeEvent represents a single edge appearance or disappearance in the node's timeline.
 type HistoryEdgeEvent struct {
-	Commit         string // git commit hash where the event occurred
+	Commit         string // git commit hash (empty when revision has no commit_hash)
 	EventType      string // "appeared" | "disappeared"
 	TargetSymbol   string
 	TargetFilePath string
@@ -23,12 +23,11 @@ type HistoryResult struct {
 }
 
 // History returns the chronological edge timeline for the node identified by symbol and kind.
-// The timeline includes both outgoing-edge appearances (created_at_commit) and
-// disappearances (valid_until_commit) ordered by commit time (creation order).
+// The timeline includes edge appearances (valid_from_rev) and disappearances (valid_until_rev)
+// ordered by revision ID (monotonic).
 func (q *Querier) History(symbol, kind string) (*HistoryResult, error) {
 	db := q.store.db
 
-	// Locate the node.
 	qStr := `SELECT id, symbol, kind, file_path, language
 	         FROM nodes WHERE symbol = ? AND kind != 'external'`
 	args := []any{symbol}
@@ -44,8 +43,7 @@ func (q *Querier) History(symbol, kind string) (*HistoryResult, error) {
 		return nil, fmt.Errorf("node lookup %q: %w", symbol, err)
 	}
 
-	// Edges are stored FROM the file node, not from individual symbol nodes.
-	// Resolve the file node that contains this symbol.
+	// Edges are stored FROM the file node; resolve it.
 	var fileNodeID int64
 	err = db.QueryRow(
 		`SELECT id FROM nodes WHERE symbol = ? AND kind = 'file' LIMIT 1`, nd.FilePath,
@@ -54,41 +52,40 @@ func (q *Querier) History(symbol, kind string) (*HistoryResult, error) {
 		return nil, fmt.Errorf("file node lookup for %q: %w", nd.FilePath, err)
 	}
 
-	// Build the timeline: union of edge appearances and disappearances,
-	// ordered by the commit stored in created_at (proxy for chronological order).
+	// Timeline: union of appearances and disappearances, ordered by revision ID (monotonic).
 	timelineRows, err := db.Query(`
 		SELECT event_type, commit_hash, target_symbol, target_file_path, target_kind, edge_kind
 		FROM (
-			-- Appearances: edge created
 			SELECT
-				'appeared'           AS event_type,
-				e.valid_from_commit  AS commit_hash,
-				n2.symbol            AS target_symbol,
-				n2.file_path         AS target_file_path,
-				n2.kind              AS target_kind,
-				e.kind               AS edge_kind,
-				e.created_at         AS sort_ts
+				'appeared'                    AS event_type,
+				COALESCE(r.commit_hash, '')   AS commit_hash,
+				n2.symbol                     AS target_symbol,
+				n2.file_path                  AS target_file_path,
+				n2.kind                       AS target_kind,
+				e.kind                        AS edge_kind,
+				r.id                          AS sort_rev
 			FROM edges e
 			JOIN nodes n2 ON n2.id = e.to_id
+			JOIN revisions r ON r.id = e.valid_from_rev
 			WHERE e.from_id = ?
 
 			UNION ALL
 
-			-- Disappearances: edge invalidated
 			SELECT
-				'disappeared'        AS event_type,
-				e.valid_until_commit AS commit_hash,
-				n2.symbol            AS target_symbol,
-				n2.file_path         AS target_file_path,
-				n2.kind              AS target_kind,
-				e.kind               AS edge_kind,
-				e.created_at         AS sort_ts
+				'disappeared'                 AS event_type,
+				COALESCE(r.commit_hash, '')   AS commit_hash,
+				n2.symbol                     AS target_symbol,
+				n2.file_path                  AS target_file_path,
+				n2.kind                       AS target_kind,
+				e.kind                        AS edge_kind,
+				r.id                          AS sort_rev
 			FROM edges e
 			JOIN nodes n2 ON n2.id = e.to_id
+			JOIN revisions r ON r.id = e.valid_until_rev
 			WHERE e.from_id = ?
-			  AND e.valid_until_commit IS NOT NULL
+			  AND e.valid_until_rev IS NOT NULL
 		)
-		ORDER BY sort_ts, event_type
+		ORDER BY sort_rev, event_type
 	`, fileNodeID, fileNodeID)
 	if err != nil {
 		return nil, fmt.Errorf("timeline query: %w", err)
@@ -110,7 +107,6 @@ func (q *Querier) History(symbol, kind string) (*HistoryResult, error) {
 		return nil, err
 	}
 
-	// Anchored observation IDs.
 	aRows, err := db.Query(`SELECT engram_obs_id FROM engram_anchors WHERE node_id = ?`, nd.ID)
 	if err != nil {
 		return nil, err

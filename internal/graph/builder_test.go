@@ -9,7 +9,7 @@ import (
 )
 
 // openTestStore creates a fresh Store in a temp dir for testing.
-// It is shared across all test files in this package.
+// Shared across all test files in the graph_test package.
 func openTestStore(t *testing.T) *graph.Store {
 	t.Helper()
 	s, err := graph.Open(filepath.Join(t.TempDir(), "test.db"))
@@ -20,9 +20,37 @@ func openTestStore(t *testing.T) *graph.Store {
 	return s
 }
 
+// testSeedRoot creates a test root and returns its ID.
+func testSeedRoot(t *testing.T, s *graph.Store) int64 {
+	t.Helper()
+	id, err := s.UpsertRoot(graph.ResolvedRoot{
+		Name: "test", RelPath: ".", AbsRoot: "/test-root", VCS: "none",
+	})
+	if err != nil {
+		t.Fatalf("testSeedRoot: %v", err)
+	}
+	return id
+}
+
+// testSeedRevision creates a revision and returns its ID.
+func testSeedRevision(t *testing.T, s *graph.Store, rootID int64, commitHash string) int64 {
+	t.Helper()
+	src := "git"
+	if commitHash == "" || commitHash == "init" {
+		src = "init"
+		commitHash = ""
+	}
+	id, err := s.CreateRevision(rootID, src, commitHash)
+	if err != nil {
+		t.Fatalf("testSeedRevision(%q): %v", commitHash, err)
+	}
+	return id
+}
+
 func TestBuilderUpsertNodes(t *testing.T) {
-	// Arrange
 	s := openTestStore(t)
+	rootID := testSeedRoot(t, s)
+	revID := testSeedRevision(t, s, rootID, "commit-abc")
 	b := graph.NewBuilder(s)
 	result := &parser.Result{
 		Nodes: []parser.Node{
@@ -31,11 +59,7 @@ func TestBuilderUpsertNodes(t *testing.T) {
 		},
 	}
 
-	// Act
-	err := b.UpsertFile("commit-abc", result)
-
-	// Assert
-	if err != nil {
+	if err := b.UpsertFile(rootID, revID, "", result); err != nil {
 		t.Fatalf("UpsertFile: %v", err)
 	}
 	// 2 explicit symbols + 1 auto-created file node
@@ -47,8 +71,9 @@ func TestBuilderUpsertNodes(t *testing.T) {
 }
 
 func TestBuilderUpsertIsIdempotent(t *testing.T) {
-	// Arrange
 	s := openTestStore(t)
+	rootID := testSeedRoot(t, s)
+	revID := testSeedRevision(t, s, rootID, "commit-abc")
 	b := graph.NewBuilder(s)
 	result := &parser.Result{
 		Nodes: []parser.Node{
@@ -56,12 +81,8 @@ func TestBuilderUpsertIsIdempotent(t *testing.T) {
 		},
 	}
 
-	// Act: upsert same result twice
-	b.UpsertFile("commit-abc", result)
-	err := b.UpsertFile("commit-abc", result)
-
-	// Assert
-	if err != nil {
+	b.UpsertFile(rootID, revID, "", result)
+	if err := b.UpsertFile(rootID, revID, "", result); err != nil {
 		t.Fatalf("second UpsertFile: %v", err)
 	}
 	var count int
@@ -72,8 +93,9 @@ func TestBuilderUpsertIsIdempotent(t *testing.T) {
 }
 
 func TestBuilderCreatesExternalNodeForUnresolvedEdge(t *testing.T) {
-	// Arrange
 	s := openTestStore(t)
+	rootID := testSeedRoot(t, s)
+	revID := testSeedRevision(t, s, rootID, "commit-abc")
 	b := graph.NewBuilder(s)
 	result := &parser.Result{
 		Nodes: []parser.Node{
@@ -84,15 +106,11 @@ func TestBuilderCreatesExternalNodeForUnresolvedEdge(t *testing.T) {
 		},
 	}
 
-	// Act
-	err := b.UpsertFile("commit-abc", result)
-
-	// Assert
-	if err != nil {
+	if err := b.UpsertFile(rootID, revID, "", result); err != nil {
 		t.Fatalf("UpsertFile: %v", err)
 	}
 	var edgeCount int
-	s.DB().QueryRow(`SELECT count(*) FROM edges WHERE valid_until_commit IS NULL`).Scan(&edgeCount)
+	s.DB().QueryRow(`SELECT count(*) FROM edges WHERE valid_until_rev IS NULL`).Scan(&edgeCount)
 	if edgeCount != 1 {
 		t.Errorf("want 1 active edge, got %d", edgeCount)
 	}
@@ -104,15 +122,17 @@ func TestBuilderCreatesExternalNodeForUnresolvedEdge(t *testing.T) {
 }
 
 func TestBuilderResolvesEdgeToKnownNode(t *testing.T) {
-	// Arrange: user.go has "user" package; server.go imports "user"
 	s := openTestStore(t)
+	rootID := testSeedRoot(t, s)
+	revID := testSeedRevision(t, s, rootID, "commit-abc")
 	b := graph.NewBuilder(s)
-	b.UpsertFile("commit-abc", &parser.Result{
+
+	b.UpsertFile(rootID, revID, "", &parser.Result{
 		Nodes: []parser.Node{
 			{Symbol: "user", Kind: "package", FilePath: "user.go", Language: "go"},
 		},
 	})
-	b.UpsertFile("commit-abc", &parser.Result{
+	b.UpsertFile(rootID, revID, "", &parser.Result{
 		Nodes: []parser.Node{
 			{Symbol: "server", Kind: "package", FilePath: "server.go", Language: "go"},
 		},
@@ -121,15 +141,12 @@ func TestBuilderResolvesEdgeToKnownNode(t *testing.T) {
 		},
 	})
 
-	// Act
 	var toFilePath string
 	err := s.DB().QueryRow(`
 		SELECT n.file_path FROM edges e
 		JOIN nodes n ON n.id = e.to_id
-		WHERE e.valid_until_commit IS NULL AND n.symbol = 'user'
+		WHERE e.valid_until_rev IS NULL AND n.symbol = 'user'
 	`).Scan(&toFilePath)
-
-	// Assert
 	if err != nil {
 		t.Fatalf("query edge target: %v", err)
 	}
@@ -139,9 +156,12 @@ func TestBuilderResolvesEdgeToKnownNode(t *testing.T) {
 }
 
 func TestBuilderInvalidatesRemovedEdge(t *testing.T) {
-	// Arrange
 	s := openTestStore(t)
+	rootID := testSeedRoot(t, s)
+	revV1 := testSeedRevision(t, s, rootID, "commit-v1")
+	revV2 := testSeedRevision(t, s, rootID, "commit-v2")
 	b := graph.NewBuilder(s)
+
 	v1 := &parser.Result{
 		Nodes: []parser.Node{
 			{Symbol: "main", Kind: "package", FilePath: "main.go", Language: "go"},
@@ -156,27 +176,22 @@ func TestBuilderInvalidatesRemovedEdge(t *testing.T) {
 			{Symbol: "main", Kind: "package", FilePath: "main.go", Language: "go"},
 		},
 		Edges: []parser.Edge{
-			// errors import removed
 			{FromSymbol: "main.go", ToSymbol: "fmt", Kind: "imports"},
 		},
 	}
 
-	// Act
-	b.UpsertFile("commit-v1", v1)
-	err := b.UpsertFile("commit-v2", v2)
-
-	// Assert
-	if err != nil {
+	b.UpsertFile(rootID, revV1, "", v1)
+	if err := b.UpsertFile(rootID, revV2, "", v2); err != nil {
 		t.Fatalf("UpsertFile v2: %v", err)
 	}
 	var activeCount int
-	s.DB().QueryRow(`SELECT count(*) FROM edges WHERE valid_until_commit IS NULL`).Scan(&activeCount)
+	s.DB().QueryRow(`SELECT count(*) FROM edges WHERE valid_until_rev IS NULL`).Scan(&activeCount)
 	if activeCount != 1 {
 		t.Errorf("want 1 active edge after removal, got %d", activeCount)
 	}
 	var invalidCount int
-	s.DB().QueryRow(`SELECT count(*) FROM edges WHERE valid_until_commit = 'commit-v2'`).Scan(&invalidCount)
+	s.DB().QueryRow(`SELECT count(*) FROM edges WHERE valid_until_rev = ?`, revV2).Scan(&invalidCount)
 	if invalidCount != 1 {
-		t.Errorf("want 1 edge invalidated with commit-v2, got %d", invalidCount)
+		t.Errorf("want 1 edge invalidated with revV2=%d, got %d", revV2, invalidCount)
 	}
 }

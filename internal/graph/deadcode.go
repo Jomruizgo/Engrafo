@@ -11,8 +11,7 @@ type OrphanNode struct {
 }
 
 // AbandonedNode is a node that once had incoming edges but now has none.
-// DaysSinceAbandoned is approximate: based on the created_at of the last
-// invalidated edge, not on the git commit timestamp.
+// DaysSinceAbandoned is exact: computed from the created_at of the invalidating revision.
 type AbandonedNode struct {
 	Symbol             string
 	Kind               string
@@ -54,7 +53,6 @@ func (q *Querier) Deadcode(thresholdDays int) (*DeadcodeResult, error) {
 }
 
 // deadcodeFilter is the shared WHERE clause for both queries.
-// Placeholders must be appended after this.
 const deadcodeFilter = `
     n.kind NOT IN ('external', 'file', 'package')
     AND n.file_path NOT LIKE '%_test.go'
@@ -94,23 +92,25 @@ func (q *Querier) queryOrphans(thresholdDays int) ([]OrphanNode, error) {
 }
 
 func (q *Querier) queryAbandoned(thresholdDays int) ([]AbandonedNode, error) {
+	// days_since_abandoned: exact from the created_at of the invalidating revision.
 	sqlStr := `
 		SELECT n.symbol, n.kind, n.file_path, n.language,
 		       COUNT(e_hist.id) AS peak_incoming_edges,
 		       COALESCE(
-		           julianday('now') - julianday(MAX(e_hist.created_at)),
+		           julianday('now') - julianday(MAX(r.created_at)),
 		           0
 		       ) AS days_since_abandoned
 		FROM nodes n
-		JOIN edges e_hist ON e_hist.to_id = n.id AND e_hist.valid_until_commit IS NOT NULL
+		JOIN edges e_hist ON e_hist.to_id = n.id AND e_hist.valid_until_rev IS NOT NULL
+		JOIN revisions r ON r.id = e_hist.valid_until_rev
 		WHERE ` + deadcodeFilter + `
 		  AND NOT EXISTS (
-		      SELECT 1 FROM edges e WHERE e.to_id = n.id AND e.valid_until_commit IS NULL
+		      SELECT 1 FROM edges e WHERE e.to_id = n.id AND e.valid_until_rev IS NULL
 		  )
 	`
 	if thresholdDays > 0 {
 		sqlStr += fmt.Sprintf(`
-		  AND (julianday('now') - julianday(MAX(e_hist.created_at))) > %d`, thresholdDays)
+		  AND (julianday('now') - julianday(MAX(r.created_at))) > %d`, thresholdDays)
 	}
 	sqlStr += `
 		GROUP BY n.id

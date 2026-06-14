@@ -193,7 +193,7 @@ func (h *Handlers) CGAnchor(_ context.Context, req mcplib.CallToolRequest) (*mcp
 		}
 	}
 
-	count, err := h.store.AnchorObservations(obsID, symbols)
+	count, err := h.store.AnchorObservations(obsID, symbols, "")
 	if err != nil {
 		return errResult(err.Error()), nil
 	}

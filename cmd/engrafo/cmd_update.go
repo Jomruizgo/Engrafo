@@ -45,6 +45,17 @@ func cmdUpdate(cfg *config) error {
 		return nil
 	}
 
+	// Get or create root for this repo.
+	rootID, err := resolveUpdateRoot(s, repoRoot)
+	if err != nil {
+		return fmt.Errorf("resolve root: %w", err)
+	}
+
+	revID, err := s.CreateRevision(rootID, "git", currentCommit)
+	if err != nil {
+		return fmt.Errorf("create revision: %w", err)
+	}
+
 	diffOut, err := exec.Command("git", "-C", repoRoot, "diff", "--name-only",
 		lastCommit+".."+currentCommit).Output()
 	if err != nil {
@@ -70,7 +81,7 @@ func cmdUpdate(cfg *config) error {
 		for i := range result.Nodes {
 			result.Nodes[i].FilePath = norm
 		}
-		if upsertErr := b.UpsertFile(currentCommit, result); upsertErr != nil {
+		if upsertErr := b.UpsertFile(rootID, revID, "", result); upsertErr != nil {
 			return fmt.Errorf("upsert %s: %w", relPath, upsertErr)
 		}
 		updated++
@@ -78,7 +89,26 @@ func cmdUpdate(cfg *config) error {
 
 	db.Exec(`INSERT OR REPLACE INTO index_meta(key,value) VALUES('last_commit_hash',?)`, currentCommit)
 	db.Exec(`INSERT OR REPLACE INTO index_meta(key,value) VALUES('indexed_at',datetime('now'))`)
+	s.SetRootIndexed(rootID, currentCommit)
 
 	fmt.Fprintf(cfg.stdout, "updated %d files (%d skipped) — now at %s\n", updated, skipped, currentCommit[:12])
 	return nil
+}
+
+// resolveUpdateRoot returns the root ID for the given repo path.
+// Uses the first existing root if available (single-repo mode), else creates one.
+func resolveUpdateRoot(s *graph.Store, repoRoot string) (int64, error) {
+	roots, err := s.AllRoots()
+	if err != nil {
+		return 0, err
+	}
+	if len(roots) > 0 {
+		return roots[0].ID, nil
+	}
+	return s.UpsertRoot(graph.ResolvedRoot{
+		Name:    filepath.Base(repoRoot),
+		RelPath: ".",
+		AbsRoot: repoRoot,
+		VCS:     "git",
+	})
 }
