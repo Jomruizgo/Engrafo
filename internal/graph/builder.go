@@ -108,6 +108,39 @@ func (b *Builder) UpsertFile(rootID, revID int64, fileChecksum string, result *p
 	return tx.Commit()
 }
 
+// InvalidateFile invalida todas las aristas activas del nodo file correspondiente a relPath
+// en la raíz rootID. Se usa cuando un archivo fue eliminado en una raíz vcs=none.
+func (b *Builder) InvalidateFile(rootID, revID int64, relPath string) error {
+	tx, err := b.store.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	var fileNodeID int64
+	err = tx.QueryRow(
+		`SELECT id FROM nodes WHERE root_id=? AND file_path=? AND kind='file' LIMIT 1`,
+		rootID, relPath,
+	).Scan(&fileNodeID)
+	if err == sql.ErrNoRows {
+		return nil // file node no existe → nada que invalidar
+	}
+	if err != nil {
+		return fmt.Errorf("find file node %s: %w", relPath, err)
+	}
+
+	activeEdges, err := loadActiveEdgesFrom(tx, fileNodeID)
+	if err != nil {
+		return fmt.Errorf("load active edges for %s: %w", relPath, err)
+	}
+	for _, ae := range activeEdges {
+		if err := invalidateEdge(tx, ae.id, revID); err != nil {
+			return fmt.Errorf("invalidate edge %d: %w", ae.id, err)
+		}
+	}
+	return tx.Commit()
+}
+
 // SetMeta stores a key/value pair in index_meta.
 func (b *Builder) SetMeta(key, value string) error {
 	_, err := b.store.db.Exec(
