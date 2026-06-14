@@ -96,7 +96,7 @@ func runWith(args []string, stdin io.Reader, stdout io.Writer) error {
 	case "init":
 		return cmdInit(cfg, rest[1:])
 	case "update":
-		return cmdUpdate(cfg)
+		return cmdUpdate(cfg, rest[1:])
 	case "status":
 		return cmdStatus(cfg)
 	case "query":

@@ -270,3 +270,76 @@ func detectVCS(root string) string {
 	}
 	return "none"
 }
+
+// initRoot indexa una sola raíz resuelta: UpsertRoot, revisión inicial, walk + parse + upsert.
+// Compartida por workspace add e initFull.
+func initRoot(cfg *config, s *graph.Store, resolved graph.ResolvedRoot) error {
+	rootID, err := s.UpsertRoot(resolved)
+	if err != nil {
+		return fmt.Errorf("upsert root: %w", err)
+	}
+
+	commitHash := currentHEAD(resolved.AbsRoot)
+	if resolved.VCS != "git" {
+		commitHash = ""
+	}
+
+	revSource := "git"
+	revHash := commitHash
+	if commitHash == "" {
+		revSource = "init"
+	}
+	revID, err := s.CreateRevision(rootID, revSource, revHash)
+	if err != nil {
+		return fmt.Errorf("create revision: %w", err)
+	}
+
+	p := newParser()
+	b := graph.NewBuilder(s)
+
+	var indexed int
+	_ = filepath.WalkDir(resolved.AbsRoot, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if skipDirs[d.Name()] {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if parser.Detect(path) == "" {
+			return nil
+		}
+		content, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return nil
+		}
+		rel, _ := filepath.Rel(resolved.AbsRoot, path)
+		rel = filepath.ToSlash(rel)
+
+		result, parseErr := p.ParseContent(rel, content)
+		if parseErr != nil {
+			return nil
+		}
+		for i := range result.Nodes {
+			result.Nodes[i].FilePath = rel
+		}
+		cs := ""
+		if resolved.VCS == "none" {
+			cs = sha256hex(content)
+		}
+		if upsertErr := b.UpsertFile(rootID, revID, cs, result); upsertErr != nil {
+			return nil
+		}
+		indexed++
+		return nil
+	})
+
+	s.SetRootIndexed(rootID, commitHash)
+
+	if cfg != nil {
+		fmt.Fprintf(cfg.stdout, "  [%s] %d archivos indexados\n", resolved.Name, indexed)
+	}
+	return nil
+}

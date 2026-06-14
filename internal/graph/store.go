@@ -172,6 +172,25 @@ func (s *Store) FileChecksum(rootID int64, relPath string) (string, error) {
 	return checksum, err
 }
 
+// AllFilePaths returns the relative paths of all file nodes for a given root.
+// Used by the checksum-based update walk to detect deleted files.
+func (s *Store) AllFilePaths(rootID int64) ([]string, error) {
+	rows, err := s.db.Query(
+		`SELECT file_path FROM nodes WHERE root_id=? AND kind='file'`, rootID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var p string
+		rows.Scan(&p)
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 // AnchorObservations links an engram observation ID to all nodes matching the given symbols.
 // If rootName != "", only nodes in that root are considered.
 // Returns the number of anchors actually created.

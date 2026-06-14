@@ -1,9 +1,17 @@
 package main
 
-import "fmt"
+import (
+	"flag"
+	"fmt"
+	"os"
+	"path/filepath"
+	"text/tabwriter"
 
-// cmdWorkspace maneja los subcomandos de workspace (add/list/remove).
-// Implementación completa en Fase 4.
+	"github.com/Jomruizgo/Engrafo/internal/graph"
+	"github.com/Jomruizgo/Engrafo/internal/workspace"
+)
+
+// cmdWorkspace maneja los subcomandos workspace add/list/remove.
 func cmdWorkspace(cfg *config, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("uso: engrafo workspace <add|list|remove> [args]")
@@ -20,14 +28,183 @@ func cmdWorkspace(cfg *config, args []string) error {
 	}
 }
 
-func cmdWorkspaceAdd(_ *config, _ []string) error {
-	return fmt.Errorf("workspace add: no implementado aún (Fase 4)")
+// cmdWorkspaceAdd agrega una raíz al manifest y la indexa inmediatamente.
+func cmdWorkspaceAdd(cfg *config, args []string) error {
+	fs2 := flag.NewFlagSet("workspace add", flag.ContinueOnError)
+	remote := fs2.String("remote", "", "URL remote del repo")
+	branch := fs2.String("branch", "", "rama por defecto")
+	vcsFlag := fs2.String("vcs", "", "sistema de control de versiones: git|none")
+	fs2.SetOutput(cfg.stdout)
+	if err := fs2.Parse(args); err != nil {
+		return err
+	}
+	rest := fs2.Args()
+	if len(rest) < 2 {
+		return fmt.Errorf("uso: engrafo workspace add <name> <path> [--remote URL] [--branch B] [--vcs git|none]")
+	}
+	name := rest[0]
+	rootPath := rest[1]
+
+	dbPath, err := cfg.resolveDB()
+	if err != nil {
+		return err
+	}
+
+	manifestPath, wsDir := cfg.manifestPath, cfg.workspaceDir
+	if manifestPath == "" {
+		cwd, _ := os.Getwd()
+		wsDir = cwd
+		manifestPath = filepath.Join(cwd, "engrafo.json")
+		if _, statErr := os.Stat(manifestPath); os.IsNotExist(statErr) {
+			if saveErr := workspace.Save(manifestPath, &workspace.Manifest{Version: 1}); saveErr != nil {
+				return fmt.Errorf("crear engrafo.json: %w", saveErr)
+			}
+			fmt.Fprintf(cfg.stdout, "creado %s\n", manifestPath)
+		}
+	}
+
+	m, err := workspace.Load(manifestPath)
+	if err != nil {
+		return fmt.Errorf("cargar manifest: %w", err)
+	}
+
+	for _, r := range m.Roots {
+		if r.Name == name {
+			return fmt.Errorf("ya existe una raíz con nombre %q", name)
+		}
+	}
+
+	spec := workspace.RootSpec{
+		Name:   name,
+		Path:   rootPath,
+		Remote: *remote,
+		Branch: *branch,
+		VCS:    *vcsFlag,
+	}
+	resolved, err := spec.Resolve(wsDir)
+	if err != nil {
+		return fmt.Errorf("resolver raíz: %w", err)
+	}
+
+	m.Roots = append(m.Roots, spec)
+	if err := workspace.Save(manifestPath, m); err != nil {
+		return fmt.Errorf("guardar manifest: %w", err)
+	}
+
+	s, err := graph.Open(dbPath)
+	if err != nil {
+		return fmt.Errorf("open db: %w", err)
+	}
+	defer s.Close()
+
+	if err := initRoot(cfg, s, resolved); err != nil {
+		return fmt.Errorf("indexar %s: %w", name, err)
+	}
+
+	fmt.Fprintf(cfg.stdout, "raíz %q agregada y indexada (%s)\n", name, resolved.AbsRoot)
+	return nil
 }
 
-func cmdWorkspaceList(_ *config) error {
-	return fmt.Errorf("workspace list: no implementado aún (Fase 4)")
+// cmdWorkspaceList muestra las raíces registradas con estadísticas básicas.
+func cmdWorkspaceList(cfg *config) error {
+	dbPath, err := cfg.resolveDB()
+	if err != nil {
+		return err
+	}
+	s, err := graph.Open(dbPath)
+	if err != nil {
+		return fmt.Errorf("open db: %w", err)
+	}
+	defer s.Close()
+
+	roots, err := s.AllRoots()
+	if err != nil {
+		return fmt.Errorf("all roots: %w", err)
+	}
+	if len(roots) == 0 {
+		fmt.Fprintln(cfg.stdout, "(sin raíces — ejecuta 'engrafo workspace add' o 'engrafo init')")
+		return nil
+	}
+
+	w := tabwriter.NewWriter(cfg.stdout, 2, 8, 2, ' ', 0)
+	fmt.Fprintln(w, "NOMBRE\tRUTA\tVCS\tREMOTE\tNODOS\tINDEXADO")
+	for _, r := range roots {
+		var nodeCount int
+		s.DB().QueryRow(
+			`SELECT COUNT(*) FROM nodes WHERE root_id=? AND kind!='external'`, r.ID,
+		).Scan(&nodeCount)
+
+		remote := r.RemoteURL
+		if remote == "" {
+			remote = "(sin remote)"
+		}
+		indexed := r.IndexedAt
+		if indexed == "" {
+			indexed = "—"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%s\n",
+			r.Name, r.RelPath, r.VCS, remote, nodeCount, indexed)
+	}
+	w.Flush()
+	return nil
 }
 
-func cmdWorkspaceRemove(_ *config, _ []string) error {
-	return fmt.Errorf("workspace remove: no implementado aún (Fase 4)")
+// cmdWorkspaceRemove elimina una raíz del manifest y de la DB (cascade).
+func cmdWorkspaceRemove(cfg *config, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("uso: engrafo workspace remove <name>")
+	}
+	name := args[0]
+
+	dbPath, err := cfg.resolveDB()
+	if err != nil {
+		return err
+	}
+
+	if cfg.manifestPath != "" {
+		m, err := workspace.Load(cfg.manifestPath)
+		if err != nil {
+			return fmt.Errorf("cargar manifest: %w", err)
+		}
+		filtered := m.Roots[:0]
+		found := false
+		for _, r := range m.Roots {
+			if r.Name == name {
+				found = true
+				continue
+			}
+			filtered = append(filtered, r)
+		}
+		if !found {
+			return fmt.Errorf("raíz %q no encontrada en el manifest", name)
+		}
+		m.Roots = filtered
+		if err := workspace.Save(cfg.manifestPath, m); err != nil {
+			return fmt.Errorf("guardar manifest: %w", err)
+		}
+	}
+
+	s, err := graph.Open(dbPath)
+	if err != nil {
+		return fmt.Errorf("open db: %w", err)
+	}
+	defer s.Close()
+
+	var nodeCount int
+	s.DB().QueryRow(`
+		SELECT COUNT(*) FROM nodes n
+		JOIN roots r ON r.id = n.root_id
+		WHERE r.name = ?`, name).Scan(&nodeCount)
+
+	res, err := s.DB().Exec(`DELETE FROM roots WHERE name = ?`, name)
+	if err != nil {
+		return fmt.Errorf("delete root: %w", err)
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return fmt.Errorf("raíz %q no encontrada en la DB", name)
+	}
+
+	fmt.Fprintf(cfg.stdout, "raíz %q eliminada (%d nodos borrados)\n", name, nodeCount)
+	return nil
 }
