@@ -28,6 +28,10 @@ func cmdHook(cfg *config, sub []string) error {
 		return hookPreRead(cfg)
 	case "pre-write":
 		return hookPreWrite(cfg)
+	case "pre-compact":
+		return hookPreCompact(cfg)
+	case "post-mem-save":
+		return hookPostMemSave(cfg)
 	default:
 		return fmt.Errorf("hook: unknown subcommand %q", sub[0])
 	}
@@ -107,6 +111,24 @@ func hookPreWrite(cfg *config) error {
 		}
 	}
 	fmt.Fprint(cfg.stdout, hooks.BuildOutput(msg))
+	return nil
+}
+
+func hookPreCompact(cfg *config) error {
+	s := hookOpenStore(cfg)
+	var q *graph.Querier
+	if s != nil {
+		defer s.Close()
+		q = graph.NewQuerier(s)
+	}
+	msg := hooks.PreCompactMessage(q)
+	fmt.Fprint(cfg.stdout, hooks.BuildOutput(msg))
+	return nil
+}
+
+func hookPostMemSave(cfg *config) error {
+	// Post mem_save: best-effort, nothing to inject.
+	fmt.Fprint(cfg.stdout, hooks.BuildOutput(""))
 	return nil
 }
 
