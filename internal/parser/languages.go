@@ -6,9 +6,10 @@ import "path/filepath"
 type Language string
 
 const (
-	LangGo         Language = "go"
-	LangTypeScript Language = "typescript"
-	LangPython     Language = "python"
+	LangGo             Language = "go"
+	LangTypeScript     Language = "typescript"
+	LangPython         Language = "python"
+	LangCloudFormation Language = "cloudformation"
 )
 
 // Detect returns the Language for the given file path based on extension.
@@ -21,6 +22,10 @@ func Detect(filename string) Language {
 		return LangTypeScript
 	case ".py", ".pyw":
 		return LangPython
+	case ".yaml", ".yml":
+		// Only CloudFormation/SAM templates produce nodes; the extractor returns
+		// an empty result for non-template YAML (CI configs, k8s, etc.).
+		return LangCloudFormation
 	default:
 		return ""
 	}

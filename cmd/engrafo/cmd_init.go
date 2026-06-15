@@ -28,6 +28,7 @@ func newParser() *parser.Parser {
 		&extractors.GoExtractor{},
 		&extractors.TypeScriptExtractor{},
 		&extractors.PythonExtractor{},
+		&extractors.CloudFormationExtractor{},
 	)
 }
 

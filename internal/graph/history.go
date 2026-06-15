@@ -51,14 +51,11 @@ func (q *Querier) History(symbol, kind, rootName string) (*HistoryResult, error)
 		return nil, fmt.Errorf("node lookup %q: %w", symbol, err)
 	}
 
-	// Edges are stored FROM the file node; resolve it.
-	var fileNodeID int64
-	err = db.QueryRow(
-		`SELECT id FROM nodes WHERE symbol = ? AND kind = 'file' LIMIT 1`, nd.FilePath,
-	).Scan(&fileNodeID)
-	if err != nil {
-		return nil, fmt.Errorf("file node lookup for %q: %w", nd.FilePath, err)
-	}
+	// Timeline reflects edges originating from THIS node. For symbol->symbol models
+	// (e.g. CloudFormation resource->resource) that is the symbol node itself. For
+	// file-level edge models (TS/Py/Go imports/calls), edges originate from the file
+	// node, so query the file node directly (kind="file").
+	fromNodeID := nd.ID
 
 	// Timeline: union of appearances and disappearances, ordered by revision ID (monotonic).
 	timelineRows, err := db.Query(`
@@ -94,7 +91,7 @@ func (q *Querier) History(symbol, kind, rootName string) (*HistoryResult, error)
 			  AND e.valid_until_rev IS NOT NULL
 		)
 		ORDER BY sort_rev, event_type
-	`, fileNodeID, fileNodeID)
+	`, fromNodeID, fromNodeID)
 	if err != nil {
 		return nil, fmt.Errorf("timeline query: %w", err)
 	}

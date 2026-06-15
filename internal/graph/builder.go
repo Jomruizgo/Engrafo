@@ -56,31 +56,53 @@ func (b *Builder) UpsertFile(rootID, revID int64, fileChecksum string, result *p
 	}
 	defer tx.Rollback()
 
-	// Always upsert a file-level node; edges originate from it.
+	// Always upsert a file-level node; edges default to originating from it.
 	fileNodeID, err := upsertNode(tx, rootID, filePath, "file", filePath, 0, 0, lang, fileChecksum)
 	if err != nil {
 		return fmt.Errorf("upsert file node: %w", err)
 	}
 
+	// localNodes maps a symbol defined in THIS file to its node id, so that
+	// edge endpoints resolve within the same file first. This lets extractors
+	// emit symbol->symbol edges (e.g. CloudFormation resource->resource) instead
+	// of only file->symbol, without cross-file symbol-name ambiguity.
+	localNodes := map[string]int64{filePath: fileNodeID}
 	for _, n := range result.Nodes {
-		if _, err := upsertNode(tx, rootID, n.Symbol, n.Kind, n.FilePath, n.LineStart, n.LineEnd, n.Language, ""); err != nil {
+		id, err := upsertNode(tx, rootID, n.Symbol, n.Kind, n.FilePath, n.LineStart, n.LineEnd, n.Language, "")
+		if err != nil {
 			return fmt.Errorf("upsert node %s: %w", n.Symbol, err)
 		}
+		localNodes[n.Symbol] = id
 	}
 
-	type edgeKey struct{ toSymbol, kind string }
+	// resolveFrom: an edge's origin. When FromSymbol is empty or equals the file
+	// path it is the file node (the TS/Py/Go model). When it names a symbol defined
+	// in this file, the edge originates from that symbol node (the CFN model).
+	resolveFrom := func(fromSymbol string) int64 {
+		if fromSymbol == "" || fromSymbol == filePath {
+			return fileNodeID
+		}
+		if id, ok := localNodes[fromSymbol]; ok {
+			return id
+		}
+		return fileNodeID
+	}
+
+	type edgeKey struct{ fromSymbol, toSymbol, kind string }
 	wantEdges := make(map[edgeKey]struct{}, len(result.Edges))
 	for _, e := range result.Edges {
-		wantEdges[edgeKey{e.ToSymbol, e.Kind}] = struct{}{}
+		wantEdges[edgeKey{e.FromSymbol, e.ToSymbol, e.Kind}] = struct{}{}
 	}
 
-	activeEdges, err := loadActiveEdgesFrom(tx, fileNodeID)
+	// Load active edges from every node belonging to this file (file node + symbols),
+	// so bi-temporal invalidation covers symbol->symbol edges too.
+	activeEdges, err := loadActiveEdgesForFile(tx, rootID, filePath)
 	if err != nil {
 		return fmt.Errorf("load active edges: %w", err)
 	}
 
 	for _, ae := range activeEdges {
-		if _, keep := wantEdges[edgeKey{ae.toSymbol, ae.kind}]; !keep {
+		if _, keep := wantEdges[edgeKey{ae.fromSymbol, ae.toSymbol, ae.kind}]; !keep {
 			if err := invalidateEdge(tx, ae.id, revID); err != nil {
 				return fmt.Errorf("invalidate edge %d: %w", ae.id, err)
 			}
@@ -89,20 +111,26 @@ func (b *Builder) UpsertFile(rootID, revID int64, fileChecksum string, result *p
 
 	activeSet := make(map[edgeKey]struct{}, len(activeEdges))
 	for _, ae := range activeEdges {
-		activeSet[edgeKey{ae.toSymbol, ae.kind}] = struct{}{}
+		activeSet[edgeKey{ae.fromSymbol, ae.toSymbol, ae.kind}] = struct{}{}
 	}
 
 	for _, e := range result.Edges {
-		ek := edgeKey{e.ToSymbol, e.Kind}
+		ek := edgeKey{e.FromSymbol, e.ToSymbol, e.Kind}
 		if _, exists := activeSet[ek]; exists {
 			continue
 		}
-		toID, err := resolveOrCreateNode(tx, rootID, e.ToSymbol)
-		if err != nil {
-			return fmt.Errorf("resolve target %s: %w", e.ToSymbol, err)
+		fromID := resolveFrom(e.FromSymbol)
+		var toID int64
+		if id, ok := localNodes[e.ToSymbol]; ok {
+			toID = id
+		} else {
+			toID, err = resolveOrCreateNode(tx, rootID, e.ToSymbol)
+			if err != nil {
+				return fmt.Errorf("resolve target %s: %w", e.ToSymbol, err)
+			}
 		}
-		if err := insertEdge(tx, fileNodeID, toID, e.Kind, revID); err != nil {
-			return fmt.Errorf("insert edge %sâ†’%s: %w", filePath, e.ToSymbol, err)
+		if err := insertEdge(tx, fromID, toID, e.Kind, revID); err != nil {
+			return fmt.Errorf("insert edge %sâ†’%s: %w", e.FromSymbol, e.ToSymbol, err)
 		}
 	}
 
@@ -183,17 +211,19 @@ func upsertNode(tx *sql.Tx, rootID int64, symbol, kind, filePath string, lineSta
 }
 
 type activeEdge struct {
-	id       int64
-	toSymbol string
-	kind     string
+	id         int64
+	fromSymbol string
+	toSymbol   string
+	kind       string
 }
 
 // loadActiveEdgesFrom returns active edges whose from_id = nodeID.
 func loadActiveEdgesFrom(tx *sql.Tx, nodeID int64) ([]activeEdge, error) {
 	rows, err := tx.Query(`
-		SELECT e.id, n.symbol, e.kind
+		SELECT e.id, nf.symbol, nt.symbol, e.kind
 		FROM edges e
-		JOIN nodes n ON n.id = e.to_id
+		JOIN nodes nf ON nf.id = e.from_id
+		JOIN nodes nt ON nt.id = e.to_id
 		WHERE e.from_id = ? AND e.valid_until_rev IS NULL
 	`, nodeID)
 	if err != nil {
@@ -203,7 +233,34 @@ func loadActiveEdgesFrom(tx *sql.Tx, nodeID int64) ([]activeEdge, error) {
 	var out []activeEdge
 	for rows.Next() {
 		var ae activeEdge
-		if err := rows.Scan(&ae.id, &ae.toSymbol, &ae.kind); err != nil {
+		if err := rows.Scan(&ae.id, &ae.fromSymbol, &ae.toSymbol, &ae.kind); err != nil {
+			return nil, err
+		}
+		out = append(out, ae)
+	}
+	return out, rows.Err()
+}
+
+// loadActiveEdgesForFile returns active edges originating from any node that
+// belongs to filePath (the file node itself plus any symbol defined in it).
+// This is what UpsertFile uses so bi-temporal invalidation covers symbol->symbol
+// edges (e.g. CloudFormation resource->resource), not just file->symbol edges.
+func loadActiveEdgesForFile(tx *sql.Tx, rootID int64, filePath string) ([]activeEdge, error) {
+	rows, err := tx.Query(`
+		SELECT e.id, nf.symbol, nt.symbol, e.kind
+		FROM edges e
+		JOIN nodes nf ON nf.id = e.from_id
+		JOIN nodes nt ON nt.id = e.to_id
+		WHERE nf.root_id = ? AND nf.file_path = ? AND e.valid_until_rev IS NULL
+	`, rootID, filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []activeEdge
+	for rows.Next() {
+		var ae activeEdge
+		if err := rows.Scan(&ae.id, &ae.fromSymbol, &ae.toSymbol, &ae.kind); err != nil {
 			return nil, err
 		}
 		out = append(out, ae)
