@@ -105,6 +105,47 @@ func TestHookPreWriteOutputsJSON(t *testing.T) {
 	}
 }
 
+func TestHookPostMemSaveAnchorsObservation(t *testing.T) {
+	dbPath := seedTestDB(t)
+
+	// Realistic PostToolUse payload: engram's MCP result nested in content[].text,
+	// with the observation's sync_id and a mention of the real symbol "UserService".
+	payload := `{"hook_event_name":"PostToolUse","tool_name":"mcp__engram__mem_save",` +
+		`"tool_input":{"title":"refactor","content":"movimos la logica de validacion a UserService"},` +
+		`"tool_response":{"content":[{"type":"text","text":"{\"sync_id\":\"obs-cafe1234\",\"state\":\"active\"}"}]}}`
+	stdin := strings.NewReader(payload)
+	var out bytes.Buffer
+
+	if err := runWith([]string{"--db", dbPath, "hook", "post-mem-save"}, stdin, &out); err != nil {
+		t.Fatalf("hook post-mem-save error: %v", err)
+	}
+
+	var m map[string]any
+	if err := json.Unmarshal(out.Bytes(), &m); err != nil {
+		t.Fatalf("output not valid JSON: %s", out.String())
+	}
+
+	// The observation must now be anchored to UserService and surface via NodeInfo.
+	s, err := graph.Open(dbPath)
+	if err != nil {
+		t.Fatalf("reopen db: %v", err)
+	}
+	defer s.Close()
+	info, err := graph.NewQuerier(s).NodeInfo("UserService", "class", false, "")
+	if err != nil {
+		t.Fatalf("NodeInfo: %v", err)
+	}
+	found := false
+	for _, id := range info.AnchoredObsIDs {
+		if id == "obs-cafe1234" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("want obs-cafe1234 anchored to UserService, got %v", info.AnchoredObsIDs)
+	}
+}
+
 func TestHookNeverErrors(t *testing.T) {
 	stdin := strings.NewReader(`{}`)
 	var out bytes.Buffer

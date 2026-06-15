@@ -207,6 +207,14 @@ Engrafo se integra con [engram](https://github.com/Gentleman-Programming/engram)
 
 **engram se instala automáticamente** al ejecutar (engrafo hooks install). Si ya tienes Gentle-AI configurado, engram ya está instalado.
 
+### Auto-anclaje (el puente que une ambos sistemas)
+
+El hook `PostToolUse` sobre `mcp__engram__mem_save` ejecuta `engrafo hook post-mem-save`: cada vez que el agente guarda una memoria en engram, engrafo extrae el `sync_id` de la observación y la **ancla automáticamente** a los nodos del grafo cuyos símbolos se mencionan en el título/contenido.
+
+El matching es **case-sensitive exacto**: la prosa va en minúscula (`decidimos`, `usar`) y no colisiona con símbolos de código (`AuthService`, `handler.ts`), así que el ruido se filtra estructuralmente; solo un símbolo que existe como nodo en el grafo produce un anclaje. Resultado: al consultar `cg_node UserService` ves las decisiones de engram ancladas a ese símbolo, sin que el agente tenga que llamar `cg_anchor` a mano.
+
+El namespace de engram se fija con `--project <workspace>` en `.mcp.json` (generado por `hooks install`), evitando la detección ambigua de `.git` en workspaces multi-repo.
+
 ### Compatibilidad de versiones
 
 | Situación | Comportamiento de `hooks install` |
@@ -389,6 +397,9 @@ Respuesta:
 
 ### `cg_anchor`
 Vincula una observación de engram a uno o más nodos del grafo por símbolo.
+Normalmente **no necesitas llamarlo a mano**: el hook `post-mem-save` ancla
+automáticamente cada `mem_save` (ver [Auto-anclaje](#auto-anclaje-el-puente-que-une-ambos-sistemas)).
+Úsalo solo para anclar una observación existente a símbolos adicionales.
 
 ```json
 {

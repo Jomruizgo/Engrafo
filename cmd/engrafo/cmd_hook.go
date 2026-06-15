@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"regexp"
+	"strings"
 
+	"github.com/Jomruizgo/Engrafo/v2/internal/engram"
 	"github.com/Jomruizgo/Engrafo/v2/internal/graph"
 	"github.com/Jomruizgo/Engrafo/v2/internal/hooks"
 	"github.com/Jomruizgo/Engrafo/v2/internal/workspace"
@@ -12,9 +15,10 @@ import (
 
 // hookEvent is the JSON payload Claude Code sends to hook stdin.
 type hookEvent struct {
-	HookEventName string         `json:"hook_event_name"`
-	ToolName      string         `json:"tool_name"`
-	ToolInput     map[string]any `json:"tool_input"`
+	HookEventName string          `json:"hook_event_name"`
+	ToolName      string          `json:"tool_name"`
+	ToolInput     map[string]any  `json:"tool_input"`
+	ToolResponse  json.RawMessage `json:"tool_response"`
 }
 
 func cmdHook(cfg *config, sub []string) error {
@@ -126,10 +130,65 @@ func hookPreCompact(cfg *config) error {
 	return nil
 }
 
+// obsIDPattern matches engram observation sync IDs, e.g. "obs-3fd0bf535828d470".
+var obsIDPattern = regexp.MustCompile(`obs-[0-9a-zA-Z_-]+`)
+
+// hookPostMemSave fires after engram's mem_save. It extracts the new observation's
+// sync_id from the tool response and auto-anchors it to every graph node whose
+// symbol is mentioned in the saved title/content. This is the bridge that makes
+// engrafo + engram a single system: memories become queryable from cg_node/cg_history.
 func hookPostMemSave(cfg *config) error {
-	// Post mem_save: best-effort, nothing to inject.
-	fmt.Fprint(cfg.stdout, hooks.BuildOutput(""))
+	ev := decodeHookEvent(cfg.stdin)
+	if ev == nil {
+		fmt.Fprint(cfg.stdout, hooks.BuildOutput(""))
+		return nil
+	}
+
+	obsID := extractObsID(ev.ToolResponse)
+	text := memSaveText(ev.ToolInput)
+	if obsID == "" || text == "" {
+		fmt.Fprint(cfg.stdout, hooks.BuildOutput(""))
+		return nil
+	}
+
+	s := hookOpenStore(cfg)
+	if s == nil {
+		fmt.Fprint(cfg.stdout, hooks.BuildOutput(""))
+		return nil
+	}
+	defer s.Close()
+
+	n, err := engram.New(s).AutoAnchor(obsID, text, "")
+	var msg string
+	if err == nil && n > 0 {
+		msg = fmt.Sprintf("[engrafo] memoria %s anclada a %d simbolo(s) del grafo", obsID, n)
+	}
+	fmt.Fprint(cfg.stdout, hooks.BuildOutput(msg))
 	return nil
+}
+
+// extractObsID finds the engram observation sync_id in the raw tool response.
+// Claude Code may deliver the MCP result nested (content[].text holding JSON),
+// so we scan the serialized payload rather than assume a fixed shape.
+func extractObsID(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	return obsIDPattern.FindString(string(raw))
+}
+
+// memSaveText concatenates the title and content args of a mem_save call.
+func memSaveText(input map[string]any) string {
+	if input == nil {
+		return ""
+	}
+	var parts []string
+	for _, key := range []string{"title", "content", "message", "body"} {
+		if v, ok := input[key].(string); ok && v != "" {
+			parts = append(parts, v)
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 func decodeHookEvent(r io.Reader) *hookEvent {
