@@ -84,7 +84,7 @@ func install(w io.Writer) error {
 		return fmt.Errorf("go not in PATH â€” install engram manually")
 	}
 
-	pkg := "github.com/Gentleman-Programming/engram@" + version.EngramCompatible
+	pkg := "github.com/Gentleman-Programming/engram/cmd/engram@" + version.EngramCompatible
 	cmd := exec.Command(goExe, "install", pkg)
 	cmd.Stdout = w
 	cmd.Stderr = w
