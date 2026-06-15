@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"encoding/json"
@@ -70,20 +70,29 @@ func hooksInstall(cfg *config, global bool) error {
 	// engram manually later; engrafo hooks still work without it.
 	fmt.Fprintf(cfg.stdout, "checking engram...\n")
 	if err := engram.EnsureCompatible(cfg.stdout); err != nil {
-		fmt.Fprintf(cfg.stdout, "  [WARN] continuing without engram â€” cg_anchor unavailable\n")
+		fmt.Fprintf(cfg.stdout, "  [WARN] continuing without engram - cg_anchor unavailable\n")
 	}
 
 	settingsPath := filepath.Join(agentDir, "settings.json")
 	settings := readJSONFile(settingsPath)
 
-	// MCP server entries â€” engrafo + engram
+	// MCP server entries - engrafo + engram
 	mcpServers, _ := settings["mcpServers"].(map[string]any)
 	if mcpServers == nil {
 		mcpServers = map[string]any{}
 	}
+	// Project mode: hardcode the resolved DB path so the MCP server starts
+	// correctly regardless of which CWD Claude Code uses to spawn the process.
+	// Global mode: no specific project, rely on auto-detection from CWD.
+	engrafoArgs := []any{"serve"}
+	if !global {
+		if dbPath, err := cfg.resolveDB(); err == nil {
+			engrafoArgs = []any{"-db", filepath.ToSlash(dbPath), "serve"}
+		}
+	}
 	mcpServers["engrafo"] = map[string]any{
 		"command": "engrafo",
-		"args":    []any{"serve"},
+		"args":    engrafoArgs,
 		"env":     map[string]any{},
 	}
 	mcpServers["engram"] = map[string]any{
@@ -93,7 +102,7 @@ func hooksInstall(cfg *config, global bool) error {
 	}
 	settings["mcpServers"] = mcpServers
 
-	// Hook entries â€” replace the hooks map entirely for engrafo-managed events.
+	// Hook entries - replace the hooks map entirely for engrafo-managed events.
 	// We preserve non-engrafo event keys.
 	hooksCfg, _ := settings["hooks"].(map[string]any)
 	if hooksCfg == nil {
