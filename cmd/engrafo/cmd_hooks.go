@@ -52,6 +52,19 @@ func detectAgentDir() (string, string) {
 	return cwd, filepath.Join(cwd, ".claude")
 }
 
+// projectRoot resolves the project root: workspace dir (manifest) > git root > cwd.
+// Assumes cfg.resolveDB() has already run (it populates cfg.workspaceDir).
+func projectRoot(cfg *config) string {
+	if cfg.workspaceDir != "" {
+		return cfg.workspaceDir
+	}
+	if gitRoot, err := findGitRoot(); err == nil {
+		return gitRoot
+	}
+	cwd, _ := os.Getwd()
+	return cwd
+}
+
 func hooksInstall(cfg *config, global bool) error {
 	var agentDir string
 	if global {
@@ -73,13 +86,11 @@ func hooksInstall(cfg *config, global bool) error {
 		fmt.Fprintf(cfg.stdout, "  [WARN] continuing without engram - cg_anchor unavailable\n")
 	}
 
-	// Register MCP servers with Claude Code via `claude mcp add`.
-	// Claude Code reads from ~/.claude.json (user scope) or .mcp.json (project scope),
-	// NOT from settings.json mcpServers — that key is for Claude Desktop only.
+	// Write the MCP server config. .mcp.json is the project-scoped file that both
+	// Claude Code CLI and the VSCode extension read (settings.json mcpServers is
+	// Claude Desktop only).
 	if err := registerMCPServers(cfg, global); err != nil {
-		// Non-fatal: claude CLI might not be in PATH, user can register manually.
-		fmt.Fprintf(cfg.stdout, "  [WARN] claude mcp add failed: %v\n", err)
-		fmt.Fprintf(cfg.stdout, "  Run manually: claude mcp add engrafo -- engrafo serve\n")
+		fmt.Fprintf(cfg.stdout, "  [WARN] MCP config failed: %v\n", err)
 	}
 
 	settingsPath := filepath.Join(agentDir, "settings.json")
@@ -132,38 +143,78 @@ func hooksInstall(cfg *config, global bool) error {
 	return nil
 }
 
-// registerMCPServers calls `claude mcp add` to register engrafo with Claude Code CLI.
-// Global mode uses user scope (~/.claude.json); project mode uses local scope (.claude/settings.local.json).
+// registerMCPServers writes .mcp.json at the project root with engrafo + engram.
+// All values are resolved at install time so the config is deterministic and never
+// depends on PATH lookups or CWD-based auto-detection at runtime:
+//   - engrafo binary -> the currently running executable (os.Executable)
+//   - graph db        -> the resolved -db path
+//   - engram --project -> the workspace/repo name (one-brain namespacing)
 func registerMCPServers(cfg *config, global bool) error {
-	scope := "local"
 	if global {
-		scope = "user"
+		return registerGlobalMCP(cfg)
 	}
 
-	// Build engrafo args: include explicit -db path in project mode.
-	mcpArgs := []string{"serve"}
-	if !global {
-		if dbPath, err := cfg.resolveDB(); err == nil {
-			mcpArgs = []string{"-db", filepath.ToSlash(dbPath), "serve"}
+	dbPath, err := cfg.resolveDB()
+	if err != nil {
+		return fmt.Errorf("resolve db: %w", err)
+	}
+
+	root := projectRoot(cfg)
+	projectName := filepath.Base(root)
+
+	engrafoBin := "engrafo"
+	if exe, eerr := os.Executable(); eerr == nil {
+		engrafoBin = filepath.ToSlash(exe)
+	}
+
+	servers := map[string]any{
+		"engrafo": map[string]any{
+			"type":    "stdio",
+			"command": engrafoBin,
+			"args":    []any{"-db", filepath.ToSlash(dbPath), "serve"},
+		},
+	}
+
+	// engram: bake in --project so its ambiguous .git auto-detection is bypassed.
+	// One-brain namespacing: all workspace memory lives under the project name.
+	if engramBin, lerr := exec.LookPath("engram"); lerr == nil {
+		servers["engram"] = map[string]any{
+			"type":    "stdio",
+			"command": filepath.ToSlash(engramBin),
+			"args":    []any{"mcp", "--project", projectName, "--tools=agent"},
 		}
+	} else {
+		fmt.Fprintf(cfg.stdout, "  [WARN] engram no encontrado - omitido del .mcp.json\n")
 	}
 
-	// claude mcp add engrafo -s <scope> -- engrafo [args...]
-	args := append([]string{"mcp", "add", "engrafo", "-s", scope, "--"}, append([]string{"engrafo"}, mcpArgs...)...)
-	cmd := exec.Command("claude", args...)
+	mcpPath := filepath.Join(root, ".mcp.json")
+	existing := readJSONFile(mcpPath)
+	merged, _ := existing["mcpServers"].(map[string]any)
+	if merged == nil {
+		merged = map[string]any{}
+	}
+	for k, v := range servers {
+		merged[k] = v
+	}
+	existing["mcpServers"] = merged
+
+	if err := writeJSONFile(mcpPath, existing); err != nil {
+		return fmt.Errorf("write .mcp.json: %w", err)
+	}
+	fmt.Fprintf(cfg.stdout, "MCP config: %s (project=%s)\n", mcpPath, projectName)
+	return nil
+}
+
+// registerGlobalMCP registers engrafo at user scope via the claude CLI.
+// Global scope has no single project, so -db and --project are auto-detected at runtime.
+func registerGlobalMCP(cfg *config) error {
+	if _, err := exec.LookPath("claude"); err != nil {
+		return fmt.Errorf("claude CLI not in PATH; run manually: claude mcp add engrafo -s user -- engrafo serve")
+	}
+	cmd := exec.Command("claude", "mcp", "add", "engrafo", "-s", "user", "--", "engrafo", "serve")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%w\n%s", err, out)
 	}
-
-	// Register engram only if the binary exists.
-	if _, err := exec.LookPath("engram"); err == nil {
-		engramArgs := []string{"mcp", "add", "engram", "-s", scope, "--", "engram", "mcp"}
-		engramCmd := exec.Command("claude", engramArgs...)
-		if out, err := engramCmd.CombinedOutput(); err != nil {
-			fmt.Fprintf(cfg.stdout, "  [WARN] engram mcp add failed: %s\n", out)
-		}
-	}
-
 	return nil
 }
 
@@ -179,14 +230,25 @@ func hooksUninstall(cfg *config, global bool) error {
 		_, agentDir = detectAgentDir()
 	}
 
-	// Unregister MCP servers from Claude Code.
-	scope := "local"
+	// Remove MCP servers from .mcp.json (project mode) or user scope (global).
 	if global {
-		scope = "user"
-	}
-	for _, name := range []string{"engrafo", "engram"} {
-		cmd := exec.Command("claude", "mcp", "remove", name, "-s", scope)
-		cmd.CombinedOutput() //nolint:errcheck - best effort
+		if _, err := exec.LookPath("claude"); err == nil {
+			for _, name := range []string{"engrafo", "engram"} {
+				exec.Command("claude", "mcp", "remove", name, "-s", "user").Run() //nolint:errcheck
+			}
+		}
+	} else {
+		_, _ = cfg.resolveDB() // populate workspaceDir
+		mcpPath := filepath.Join(projectRoot(cfg), ".mcp.json")
+		mcp := readJSONFile(mcpPath)
+		if servers, ok := mcp["mcpServers"].(map[string]any); ok {
+			delete(servers, "engrafo")
+			delete(servers, "engram")
+			if len(servers) == 0 {
+				delete(mcp, "mcpServers")
+			}
+			writeJSONFile(mcpPath, mcp) //nolint:errcheck
+		}
 	}
 
 	settingsPath := filepath.Join(agentDir, "settings.json")
