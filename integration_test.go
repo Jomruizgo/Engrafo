@@ -1,8 +1,8 @@
-﻿//go:build cgo
+//go:build cgo
 
 package engrafo_test
 
-// Integration tests for v1.0 success criteria (PRD section "Criterios de Ã©xito").
+// Integration tests for v1.0 success criteria (PRD section "Criterios de exito").
 // These tests cross package boundaries to verify end-to-end data flow.
 // Require CGO (tree-sitter parser extractors).
 
@@ -25,23 +25,46 @@ func openIntegrationStore(t *testing.T) *graph.Store {
 	return s
 }
 
-// TestBitemporalEdgeInvalidation â€” PRD criterion 6:
+func seedRoot(t *testing.T, s *graph.Store) int64 {
+	t.Helper()
+	id, err := s.UpsertRoot(graph.ResolvedRoot{
+		Name: "test-root", RelPath: ".", AbsRoot: "/test-root", VCS: "git",
+	})
+	if err != nil {
+		t.Fatalf("UpsertRoot: %v", err)
+	}
+	return id
+}
+
+func seedRevision(t *testing.T, s *graph.Store, rootID int64, commitHash string) int64 {
+	t.Helper()
+	id, err := s.CreateRevision(rootID, "git", commitHash)
+	if err != nil {
+		t.Fatalf("CreateRevision(%q): %v", commitHash, err)
+	}
+	return id
+}
+
+// TestBitemporalEdgeInvalidation -- PRD criterion 6:
 // after removing a dependency in a later commit, Dependents() returns nothing,
 // but NodeInfo(include_invalidated=true) exposes the historical edge.
 func TestBitemporalEdgeInvalidation(t *testing.T) {
 	// Arrange
 	s := openIntegrationStore(t)
 	b := graph.NewBuilder(s)
+	rootID := seedRoot(t, s)
+	revA := seedRevision(t, s, rootID, "commit-A")
+	revB := seedRevision(t, s, rootID, "commit-B")
 
 	// Commit A: server.go imports user
-	if err := b.UpsertFile("commit-A", &parser.Result{
+	if err := b.UpsertFile(rootID, revA, "", &parser.Result{
 		Nodes: []parser.Node{
 			{Symbol: "user", Kind: "package", FilePath: "user.go", Language: "go"},
 		},
 	}); err != nil {
 		t.Fatalf("upsert user.go commit-A: %v", err)
 	}
-	if err := b.UpsertFile("commit-A", &parser.Result{
+	if err := b.UpsertFile(rootID, revA, "", &parser.Result{
 		Nodes: []parser.Node{
 			{Symbol: "server", Kind: "package", FilePath: "server.go", Language: "go"},
 		},
@@ -53,7 +76,7 @@ func TestBitemporalEdgeInvalidation(t *testing.T) {
 	}
 
 	// Commit B: server.go drops the import
-	if err := b.UpsertFile("commit-B", &parser.Result{
+	if err := b.UpsertFile(rootID, revB, "", &parser.Result{
 		Nodes: []parser.Node{
 			{Symbol: "server", Kind: "package", FilePath: "server.go", Language: "go"},
 		},
@@ -64,8 +87,8 @@ func TestBitemporalEdgeInvalidation(t *testing.T) {
 
 	q := graph.NewQuerier(s)
 
-	// Act: active query â€” edge must be invisible
-	deps, err := q.Dependents("user.go")
+	// Act: active query -- edge must be invisible
+	deps, err := q.Dependents("user.go", "")
 	if err != nil {
 		t.Fatalf("Dependents: %v", err)
 	}
@@ -75,9 +98,9 @@ func TestBitemporalEdgeInvalidation(t *testing.T) {
 		t.Errorf("want 0 active dependents after invalidation, got %d", len(deps))
 	}
 
-	// Act: historical query â€” the edge originates from the file node "server.go",
+	// Act: historical query -- the edge originates from the file node "server.go",
 	// so query NodeInfo on the file node (FromSymbol in edges is always the file path).
-	result, err := q.NodeInfo("server.go", "file", true)
+	result, err := q.NodeInfo("server.go", "file", true, "")
 	if err != nil {
 		t.Fatalf("NodeInfo(include_invalidated=true): %v", err)
 	}
@@ -91,7 +114,7 @@ func TestBitemporalEdgeInvalidation(t *testing.T) {
 	}
 }
 
-// TestParserFixturesProduceNodes â€” PRD criterion 2:
+// TestParserFixturesProduceNodes -- PRD criterion 2:
 // verifies that the three supported languages produce expected node types from fixture files.
 func TestParserFixturesProduceNodes(t *testing.T) {
 	p := parser.New(
@@ -133,12 +156,15 @@ func TestParserFixturesProduceNodes(t *testing.T) {
 	}
 }
 
-// TestEndToEndInitAndQuery â€” PRD criterion 2:
-// full pipeline: parse real fixture â†’ build graph â†’ NodeInfo resolves correctly.
+// TestEndToEndInitAndQuery -- PRD criterion 2:
+// full pipeline: parse real fixture -> build graph -> NodeInfo resolves correctly.
 func TestEndToEndInitAndQuery(t *testing.T) {
 	// Arrange
 	s := openIntegrationStore(t)
 	b := graph.NewBuilder(s)
+	rootID := seedRoot(t, s)
+	revID := seedRevision(t, s, rootID, "commit-A")
+
 	p := parser.New(&extractors.GoExtractor{})
 
 	result, err := p.ParseFile("testdata/fixtures/go/simple.go")
@@ -148,13 +174,13 @@ func TestEndToEndInitAndQuery(t *testing.T) {
 	for i := range result.Nodes {
 		result.Nodes[i].FilePath = "simple.go"
 	}
-	if err := b.UpsertFile("commit-A", result); err != nil {
+	if err := b.UpsertFile(rootID, revID, "", result); err != nil {
 		t.Fatalf("UpsertFile: %v", err)
 	}
 
 	// Act
 	q := graph.NewQuerier(s)
-	info, err := q.NodeInfo("UserService", "class", false)
+	info, err := q.NodeInfo("UserService", "class", false, "")
 	if err != nil {
 		t.Fatalf("NodeInfo(UserService): %v", err)
 	}
@@ -171,14 +197,16 @@ func TestEndToEndInitAndQuery(t *testing.T) {
 	}
 }
 
-// TestContextReflectsIndexedData â€” PRD criterion 2:
+// TestContextReflectsIndexedData -- PRD criterion 2:
 // verifies cg_context returns correct counts after indexing.
 func TestContextReflectsIndexedData(t *testing.T) {
 	// Arrange
 	s := openIntegrationStore(t)
 	b := graph.NewBuilder(s)
+	rootID := seedRoot(t, s)
+	revA := seedRevision(t, s, rootID, "commit-A")
 
-	b.UpsertFile("commit-A", &parser.Result{
+	b.UpsertFile(rootID, revA, "", &parser.Result{ //nolint:errcheck
 		Nodes: []parser.Node{
 			{Symbol: "user", Kind: "package", FilePath: "user.go", Language: "go"},
 			{Symbol: "UserService", Kind: "class", FilePath: "user.go", Language: "go"},
@@ -195,7 +223,7 @@ func TestContextReflectsIndexedData(t *testing.T) {
 
 	// Assert
 	if ctx.TotalNodes < 3 {
-		t.Errorf("want â‰¥3 nodes, got %d", ctx.TotalNodes)
+		t.Errorf("want >=3 nodes, got %d", ctx.TotalNodes)
 	}
 	if len(ctx.Languages) == 0 {
 		t.Error("want at least one language in context, got none")

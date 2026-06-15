@@ -13,11 +13,18 @@ func cmdHooks(cfg *config, sub []string) error {
 	if len(sub) == 0 {
 		return fmt.Errorf("hooks: specify subcommand (install | uninstall)")
 	}
+	global := false
+	args := sub[1:]
+	for _, a := range args {
+		if a == "--global" {
+			global = true
+		}
+	}
 	switch sub[0] {
 	case "install":
-		return hooksInstall(cfg)
+		return hooksInstall(cfg, global)
 	case "uninstall":
-		return hooksUninstall(cfg)
+		return hooksUninstall(cfg, global)
 	default:
 		return fmt.Errorf("hooks: unknown subcommand %q", sub[0])
 	}
@@ -44,8 +51,17 @@ func detectAgentDir() (string, string) {
 	return cwd, filepath.Join(cwd, ".claude")
 }
 
-func hooksInstall(cfg *config) error {
-	_, agentDir := detectAgentDir()
+func hooksInstall(cfg *config, global bool) error {
+	var agentDir string
+	if global {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("resolve home dir: %w", err)
+		}
+		agentDir = filepath.Join(home, ".claude")
+	} else {
+		_, agentDir = detectAgentDir()
+	}
 	if err := os.MkdirAll(agentDir, 0755); err != nil {
 		return fmt.Errorf("create agent dir: %w", err)
 	}
@@ -113,17 +129,28 @@ func hooksInstall(cfg *config) error {
 		return fmt.Errorf("write settings: %w", err)
 	}
 
-	// Install git post-commit hook
-	if gitRoot, err := findGitRoot(); err == nil {
-		installGitPostCommitHook(gitRoot)
+	// Install git post-commit hook (only in project mode, not global)
+	if !global {
+		if gitRoot, err := findGitRoot(); err == nil {
+			installGitPostCommitHook(gitRoot)
+		}
 	}
 
 	fmt.Fprintf(cfg.stdout, "hooks installed: %s\n", settingsPath)
 	return nil
 }
 
-func hooksUninstall(cfg *config) error {
-	_, agentDir := detectAgentDir()
+func hooksUninstall(cfg *config, global bool) error {
+	var agentDir string
+	if global {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("resolve home dir: %w", err)
+		}
+		agentDir = filepath.Join(home, ".claude")
+	} else {
+		_, agentDir = detectAgentDir()
+	}
 	settingsPath := filepath.Join(agentDir, "settings.json")
 	settings := readJSONFile(settingsPath)
 
