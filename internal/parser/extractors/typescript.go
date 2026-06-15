@@ -28,6 +28,13 @@ func (e *TypeScriptExtractor) init() *tree_sitter.Language {
 func (e *TypeScriptExtractor) Language() parser.Language { return parser.LangTypeScript }
 
 func (e *TypeScriptExtractor) Extract(filePath string, source []byte) (*parser.Result, error) {
+	// Vue Single File Components wrap the script in <script> alongside <template>
+	// (HTML) and <style> (CSS). Feed tree-sitter only the script block; other lines
+	// are blanked so line numbers still map to the original .vue file.
+	if strings.HasSuffix(strings.ToLower(filePath), ".vue") {
+		source = extractVueScript(source)
+	}
+
 	lang := e.init()
 	p, err := newParser(lang)
 	if err != nil {
@@ -71,6 +78,33 @@ func (e *TypeScriptExtractor) Extract(filePath string, source []byte) (*parser.R
 	// top-level function declarations
 	for _, cap := range queryAll(lang, root, source,
 		`(function_declaration name: (identifier) @name)`, "name") {
+		nodes = append(nodes, parser.Node{
+			Symbol:    cap.text,
+			Kind:      "function",
+			FilePath:  filePath,
+			LineStart: int(cap.startLine + 1),
+			LineEnd:   int(cap.endLine + 1),
+			Language:  string(parser.LangTypeScript),
+		})
+	}
+
+	// arrow functions and function expressions assigned to a variable:
+	//   const useUsers = () => { ... }      (Vue3 composables, React hooks, utils)
+	//   const handler = function () { ... }
+	// Dominant in modern JS/TS where `function foo()` declarations are rare.
+	for _, cap := range queryAll(lang, root, source,
+		`(variable_declarator name: (identifier) @name value: (arrow_function))`, "name") {
+		nodes = append(nodes, parser.Node{
+			Symbol:    cap.text,
+			Kind:      "function",
+			FilePath:  filePath,
+			LineStart: int(cap.startLine + 1),
+			LineEnd:   int(cap.endLine + 1),
+			Language:  string(parser.LangTypeScript),
+		})
+	}
+	for _, cap := range queryAll(lang, root, source,
+		`(variable_declarator name: (identifier) @name value: (function_expression))`, "name") {
 		nodes = append(nodes, parser.Node{
 			Symbol:    cap.text,
 			Kind:      "function",

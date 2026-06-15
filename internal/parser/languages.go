@@ -17,7 +17,7 @@ func Detect(filename string) Language {
 	switch filepath.Ext(filename) {
 	case ".go":
 		return LangGo
-	case ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs":
+	case ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".vue":
 		return LangTypeScript
 	case ".py", ".pyw":
 		return LangPython

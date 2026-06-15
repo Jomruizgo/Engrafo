@@ -351,13 +351,16 @@ func initFromGit(cfg *config, root, dbPath string, n int) error {
 	return nil
 }
 
-// changedFiles returns the files changed in hash relative to prevHash.
-// When prevHash is empty, returns all files introduced in hash.
+// changedFiles returns the files to index for hash relative to prevHash.
+// When prevHash is empty (the oldest replayed commit), it returns the ENTIRE tree
+// at that commit (git ls-tree) so the graph is seeded with the full codebase, not
+// just the files introduced in that single commit. Subsequent commits return only
+// their diff, so bi-temporal edge evolution stays correct.
 func changedFiles(root, hash, prevHash string) []string {
 	var out []byte
 	if prevHash == "" {
 		out, _ = exec.Command("git", "-C", root,
-			"diff-tree", "--no-commit-id", "-r", "--name-only", hash).Output()
+			"ls-tree", "-r", "--name-only", hash).Output()
 	} else {
 		out, _ = exec.Command("git", "-C", root,
 			"diff", "--name-only", prevHash+".."+hash).Output()
