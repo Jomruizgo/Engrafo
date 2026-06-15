@@ -37,6 +37,7 @@ func seedGraph(t *testing.T, s *graph.Store) {
 		Nodes: []parser.Node{
 			{Symbol: "AuthService", Kind: "class", FilePath: "auth.ts", Language: "typescript"},
 			{Symbol: "login", Kind: "function", FilePath: "auth.ts", Language: "typescript"},
+			{Symbol: "create_service_snapshot", Kind: "function", FilePath: "snapshot.py", Language: "python"},
 		},
 	}); err != nil {
 		t.Fatalf("UpsertFile: %v", err)
@@ -66,6 +67,31 @@ func TestAutoAnchorMatchesCodeSymbols(t *testing.T) {
 	}
 	if len(info.AnchoredObsIDs) != 1 || info.AnchoredObsIDs[0] != "obs-abc123" {
 		t.Errorf("want anchored obs 'obs-abc123' on AuthService, got %v", info.AnchoredObsIDs)
+	}
+}
+
+func TestAutoAnchorMatchesPythonSnakeCase(t *testing.T) {
+	s := openStore(t)
+	seedGraph(t, s)
+
+	b := engram.New(s)
+	// Python codebases use snake_case; prose words won't contain underscores.
+	text := "el bug estaba en create_service_snapshot cuando el tenant no existia"
+	n, err := b.AutoAnchor("obs-py1", text, "")
+	if err != nil {
+		t.Fatalf("AutoAnchor: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("want 1 anchor (create_service_snapshot), got %d", n)
+	}
+
+	q := graph.NewQuerier(s)
+	info, err := q.NodeInfo("create_service_snapshot", "function", false, "")
+	if err != nil {
+		t.Fatalf("NodeInfo: %v", err)
+	}
+	if len(info.AnchoredObsIDs) != 1 || info.AnchoredObsIDs[0] != "obs-py1" {
+		t.Errorf("want obs-py1 anchored, got %v", info.AnchoredObsIDs)
 	}
 }
 

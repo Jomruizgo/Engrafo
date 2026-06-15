@@ -41,9 +41,10 @@ func (b *Bridge) AutoAnchor(obsID, text, rootName string) (int, error) {
 }
 
 // extractSymbolCandidates returns deduped tokens from text that look like code
-// symbols or file paths: must contain an uppercase letter, a "/", or a ".".
-// This is a cheap pre-filter to bound DB lookups; correctness comes from the
-// graph node match in AnchorObservations.
+// symbols or file paths: must contain an uppercase letter (camelCase/PascalCase),
+// an underscore (snake_case, e.g. Python), a "/", or a ".". This is a cheap
+// pre-filter to bound DB lookups; correctness comes from the graph node match in
+// AnchorObservations.
 func extractSymbolCandidates(text string) []string {
 	const maxCandidates = 64
 	seen := make(map[string]bool)
@@ -72,7 +73,7 @@ func looksLikeSymbol(tok string) bool {
 		if r >= 'A' && r <= 'Z' {
 			return true
 		}
-		if r == '/' || r == '.' {
+		if r == '_' || r == '/' || r == '.' {
 			return true
 		}
 	}
